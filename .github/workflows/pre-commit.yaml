@@ -1,0 +1,18 @@
+name: Lint
+
+on: push
+
+jobs:
+  pre-commit-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Set up pre-commit Cache
+        uses: pre-commit/action@v3.0.0
