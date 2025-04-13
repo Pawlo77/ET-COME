@@ -134,7 +134,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
 
         self._fitted_: bool = False
         self._history: Optional[List[dict]] = None
-        
+
         self._n_classes = None
 
         # Cache for full KNN results and associated parameters
@@ -287,7 +287,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             self._logger.info(f"Identified minority class: {minority_class}")
         val_minority_mask = y_val == minority_class
         minority_mask = y_clean == minority_class
-        
+
         if n_classes is None:
             n_classes = len(np.unique(y_clean))
             self._logger.info(f"Identified number of classes: {n_classes}")
@@ -355,7 +355,10 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
                     ):
                         batch_models = self._models[-step_size:]
                         preds, cached_class_preds = self._evaluate_batch(
-                            X_val, y_val, batch_models, cached_class_preds=cached_class_preds
+                            X_val,
+                            y_val,
+                            batch_models,
+                            cached_class_preds=cached_class_preds,
                         )
                         if save_history_:
                             self._save_history_entry(
@@ -442,7 +445,11 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         return self
 
     def predict(
-        self, X: np.ndarray, level: int = logging.INFO, n_jobs: int = None, soft_: bool = False
+        self,
+        X: np.ndarray,
+        level: int = logging.INFO,
+        n_jobs: int = None,
+        soft_: bool = False,
     ) -> np.ndarray:
         """
         Predicts class labels for the given features using majority voting across the ensemble.
@@ -479,10 +486,14 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         """
         if soft_:
             return np.apply_along_axis(
-                lambda x: np.bincount(x, minlength=self._n_classes) / preds.shape[0], axis=0, arr=preds
+                lambda x: np.bincount(x, minlength=self._n_classes) / preds.shape[0],
+                axis=0,
+                arr=preds,
             )
         return np.apply_along_axis(
-            lambda x: np.bincount(x, minlength=self._n_classes).argmax(), axis=0, arr=preds
+            lambda x: np.bincount(x, minlength=self._n_classes).argmax(),
+            axis=0,
+            arr=preds,
         )
 
     def _save_history_entry(self, name: str, **dt: dict) -> None:
@@ -789,19 +800,19 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             np.ndarray: A boolean mask indicating the BP regions.
         """
         self._logger.debug("Identifying BP regions.")
-        
+
         # Calculate the mean prediction probabilities for each class
         # for validation data where true label is minority class
         votes = self._vote(preds=class_preds, soft_=True)
 
         confidence_score = np.max(votes, axis=0)
         y_pred = np.argmax(votes, axis=0)
-        
+
         # model is unsure of its prediction
-        condidence_mask = (confidence_score < theta)
+        condidence_mask = confidence_score < theta
         # model is wrong
-        misclass_mask = (y_pred != y_val)
-        
+        misclass_mask = y_pred != y_val
+
         val_bp_mask = condidence_mask | misclass_mask
         val_bp_indeces = np.flatnonzero(val_bp_mask)
 
@@ -821,9 +832,8 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         return train_bp_mask, {
             "condidence_mask": condidence_mask,
             "y_pred": y_pred,
-            "condidence_mask": condidence_mask,
             "misclass_mask": misclass_mask,
-            "val_bp_mask": val_bp_mask, 
+            "val_bp_mask": val_bp_mask,
             "bp_mask": train_bp_mask,
             "minority_train_bp_indeces": minority_train_bp_indeces,
             "minority_mask": minority_mask,
