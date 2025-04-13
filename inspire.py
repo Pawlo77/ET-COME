@@ -134,6 +134,8 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
 
         self._fitted_: bool = False
         self._history: Optional[List[dict]] = None
+        
+        self._n_classes = None
 
         # Cache for full KNN results and associated parameters
         self._full_knn_indices: Optional[np.ndarray] = None
@@ -191,6 +193,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         remove_outliers_: bool = True,
         perform_oversampling_: bool = True,
         cleanup_: bool = True,
+        br_kwargs: dict = dict(br_treshold=0.5),
         bp_kwargs: dict = dict(theta=0.7, tau=0.5, neighbours=3),
         stratified_kwargs: dict = dict(shuffle=True, random_state=42),
         knn_kw: dict = {},
@@ -198,9 +201,11 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         n_jobs: int = None,
         save_history_: bool = False,
         minority_class: int = None,
+        n_classes: int = None,
     ) -> "CustomEnsembleClassifier":  # noqa: F821
         """
         Fits the ensemble classifier using iterative training with ENN cleaning and oversampling.
+        Assumes labels are integers 0, 1, ... n - 1 where n stands for number of classes.
 
         Args:
             X (np.ndarray): Training features.
@@ -217,6 +222,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             remove_outliers_ (bool): Whether to perform ENN cleaning.
             perform_oversampling_ (bool): Whether to perform oversampling via SMOTE.
             cleanup_ (bool): Whether to clean up cached data after training (excluding training history).
+            br_kwargs (dict): Parameters for identifying border regions (must include 'br_treshold').
             bp_kwargs (dict): Parameters for identifying bad performance regions (must include 'neighbours').
             stratified_kwargs (dict): Keyword arguments for stratified folding.
             knn_kw (dict): Additional parameters for KNN fitting.
@@ -225,6 +231,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             save_history_ (bool): Whether to save results from each training step (can be space/time intensive).
             minority_class (int): The minority class label for the dataset. If not
                 provided, will be determined automatically.
+            n_classes (int): Number of classes in the dataset. If not provided, will be determined automatically.
 
         Returns:
             CustomEnsembleClassifier: The fitted classifier.
@@ -278,6 +285,13 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             unique, counts = np.unique(y_clean, return_counts=True)
             minority_class = unique[np.argmin(counts)]
             self._logger.info(f"Identified minority class: {minority_class}")
+        val_minority_mask = y_val == minority_class
+        minority_mask = y_clean == minority_class
+        
+        if n_classes is None:
+            n_classes = len(np.unique(y_clean))
+            self._logger.info(f"Identified number of classes: {n_classes}")
+        self._n_classes = n_classes
 
         # Step 1 (Validation): Fit and cache the KNN index for the validation set.
         with TimedLogger(
@@ -285,8 +299,9 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             logger=self._logger,
             level=logging.INFO,
         ):
+            # fit just between validation set and minority class in training set
             self._fit_knn_val(
-                X_train=X_clean,
+                X_train=X_clean[minority_mask],
                 X_val=X_val,
                 approximate_knn_=approximate_knn_,
                 k=bp_kwargs["neighbours"],
@@ -304,6 +319,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
                     y_clean,
                     k=oversampling_neighbours,
                     minority_class=minority_class,
+                    **br_kwargs,
                 )
             if save_history_:
                 self._save_history_entry("BR", border_mask=border_mask)
@@ -339,7 +355,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
                     ):
                         batch_models = self._models[-step_size:]
                         preds, cached_class_preds = self._evaluate_batch(
-                            X_val, y_val, batch_models, cached_class_preds
+                            X_val, y_val, batch_models, cached_class_preds=cached_class_preds
                         )
                         if save_history_:
                             self._save_history_entry(
@@ -351,9 +367,9 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
                             if save_history_:
                                 bp_mask, bp_history = self._identify_bp(
                                     X_clean,
-                                    X_val,
                                     y_val,
-                                    minority_class=minority_class,
+                                    minority_mask=minority_mask,
+                                    val_minority_mask=val_minority_mask,
                                     class_preds=cached_class_preds,
                                     return_history_=True,
                                     **bp_kwargs,
@@ -362,9 +378,9 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
                                 bp_history = {}
                                 bp_mask = self._identify_bp(
                                     X_clean,
-                                    X_val,
                                     y_val,
-                                    minority_class=minority_class,
+                                    minority_mask=minority_mask,
+                                    val_minority_mask=val_minority_mask,
                                     class_preds=cached_class_preds,
                                     return_history_=False,
                                     **bp_kwargs,
@@ -426,7 +442,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         return self
 
     def predict(
-        self, X: np.ndarray, level: int = logging.INFO, n_jobs: int = None
+        self, X: np.ndarray, level: int = logging.INFO, n_jobs: int = None, soft_: bool = False
     ) -> np.ndarray:
         """
         Predicts class labels for the given features using majority voting across the ensemble.
@@ -435,6 +451,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             X (np.ndarray): Input feature data.
             level (int): Logging level.
             n_jobs (int, optional): Number of parallel jobs. If None, uses all processors.
+            soft_ (bool): If True, applies soft voting; otherwise, applies hard voting.
 
         Returns:
             np.ndarray: The predicted class labels.
@@ -447,9 +464,26 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
                 preds = np.array(
                     list(executor.map(lambda clf: clf.predict(X), self._models))
                 )
+            return self._vote(preds=preds, soft_=soft_)
+
+    def _vote(self, preds: np.ndarray, soft_: bool = False) -> np.ndarray:
+        """
+        Apply soft voting to the predictions.
+
+        Args:
+            preds (np.ndarray): The predictions from the ensemble.
+            soft_ (bool): If True, applies soft voting; otherwise, applies hard voting.
+
+        Returns:
+            np.ndarray: The final predictions based on soft voting.
+        """
+        if soft_:
             return np.apply_along_axis(
-                lambda x: np.bincount(x, minlength=2).argmax(), axis=0, arr=preds
+                lambda x: np.bincount(x, minlength=self._n_classes) / preds.shape[0], axis=0, arr=preds
             )
+        return np.apply_along_axis(
+            lambda x: np.bincount(x, minlength=self._n_classes).argmax(), axis=0, arr=preds
+        )
 
     def _save_history_entry(self, name: str, **dt: dict) -> None:
         """
@@ -535,12 +569,12 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             )
             knn_index.add_items(X_train, np.arange(n_elements))
             knn_index.set_ef(ef)
-            indices, distances = knn_index.knn_query(X_train, k=k)
+            indices, distances = knn_index.knn_query(X_val, k=k)
         else:
             self._logger.debug("Using exact KNN.")
             neigh = NearestNeighbors(n_neighbors=k, metric="euclidean")
             neigh.fit(X_train)
-            distances, indices = neigh.kneighbors(X_train)
+            distances, indices = neigh.kneighbors(X_val)
         return indices, distances
 
     def _knn_val(
@@ -656,7 +690,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         return self._indices_map[indices, 1]
 
     def _perform_enn(
-        self, X: np.ndarray, y: np.ndarray, k: int = 5, min_allowed: int = 2
+        self, X: np.ndarray, y: np.ndarray, k: int = 5, min_allowed: int = 0
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Performs Edited Nearest Neighbor (ENN) cleaning to remove potential outliers.
@@ -665,7 +699,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             X (np.ndarray): Feature data.
             y (np.ndarray): Class labels.
             k (int, optional): Number of neighbors to consider for ENN. Defaults to 5.
-            min_allowed (int, optional): Minimum number of matching neighbors required. Defaults to 2.
+            min_allowed (int, optional): Minimum number of matching neighbors required. Defaults to 0.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: The cleaned features and corresponding labels.
@@ -709,6 +743,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         """
         self._logger.debug("Evaluating batch models (%d).", len(batch_models))
         batch_class_preds = np.array([clf.predict(X_val) for clf in batch_models])
+        self._logger.debug(f"Cached preds: {cached_class_preds}")
         if cached_class_preds is not None:
             all_class_preds = np.concatenate(
                 [cached_class_preds, batch_class_preds], axis=0
@@ -723,10 +758,10 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
     def _identify_bp(
         self,
         X_clean: np.ndarray,
-        X_val: np.ndarray,
         y_val: np.ndarray,
         class_preds: np.ndarray,
-        minority_class: int,
+        minority_mask: np.ndarray,
+        val_minority_mask: np.ndarray,
         theta: float = 0.7,
         tau: float = 0.5,
         neighbours: int = 3,
@@ -735,12 +770,15 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         """
         Identifies regions of poor performance (Bad Performance - BP) in the validation data.
 
+        Warning:
+            Implementation supports just binary classification.
+
         Args:
             X_clean (np.ndarray): Cleaned training samples.
-            X_val (np.ndarray): Validation samples.
             y_val (np.ndarray): True labels for the validation data.
             class_preds (np.ndarray): Predictions from the ensemble (for each model in ensable,
                 2D array of stacked predictions).
+            val_minority_mask (np.ndarray): Mask for the minority class in the validation data.
             minority_class (int): The minority class label.
             theta (float): Confidence threshold.
             tau (float): Misclassification proportion threshold.
@@ -751,32 +789,44 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             np.ndarray: A boolean mask indicating the BP regions.
         """
         self._logger.debug("Identifying BP regions.")
+        
+        # Calculate the mean prediction probabilities for each class
+        # for validation data where true label is minority class
+        votes = self._vote(preds=class_preds, soft_=True)
 
-        # Calculate the mean prediction probabilities for the minority class
-        y_pred_proba = np.mean(class_preds == minority_class, axis=0)
+        confidence_score = np.max(votes, axis=0)
+        y_pred = np.argmax(votes, axis=0)
+        
+        # model is unsure of its prediction
+        condidence_mask = (confidence_score < theta)
+        # model is wrong
+        misclass_mask = (y_pred != y_val)
+        
+        val_bp_mask = condidence_mask | misclass_mask
+        val_bp_indeces = np.flatnonzero(val_bp_mask)
 
-        # Calculate probability for minority class where it accually is
-        confidence = np.ones(X_val.shape[0])
-        minority_mask = y_val == minority_class
-        confidence[minority_mask] = y_pred_proba[minority_mask]
-
-        misclass_prop = np.mean(class_preds != y_val[np.newaxis, :], axis=0)
-        val_bp_mask = (confidence < theta) & (misclass_prop >= tau)
-        val_bp_indeces = np.where(val_bp_mask)[0]
-        train_bp_indeces = self._knn_val(
+        minority_train_bp_indeces = self._knn_val(
             val_bp_indeces, k=neighbours, return_distances_=False
-        )
+        ).flatten()
+
+        # to be optimized with indeces transalation
         train_bp_mask = np.zeros(X_clean.shape[0], dtype=bool)
-        train_bp_mask[train_bp_indeces] = True
+        minority_train_bp_minority = train_bp_mask[minority_mask]
+        minority_train_bp_minority[minority_train_bp_indeces] = True
+        train_bp_mask[minority_mask] = minority_train_bp_minority
 
         if not return_history_:
             return train_bp_mask
 
         return train_bp_mask, {
-            "confidence": confidence,
-            "misclass_prop": misclass_prop,
-            "val_bp_indeces": val_bp_indeces,
+            "condidence_mask": condidence_mask,
+            "y_pred": y_pred,
+            "condidence_mask": condidence_mask,
+            "misclass_mask": misclass_mask,
+            "val_bp_mask": val_bp_mask, 
             "bp_mask": train_bp_mask,
+            "minority_train_bp_indeces": minority_train_bp_indeces,
+            "minority_mask": minority_mask,
         }
 
     def _identify_br(
@@ -808,7 +858,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         )
 
         br_mask = (
-            np.sum(neighbor_labels != y_clean[:, np.newaxis], axis=1)
+            np.sum(neighbor_labels == y_clean[:, np.newaxis], axis=1)
             <= br_treshold * neighbor_labels.shape[1]
         ) & (y_clean == minority_class)
         return br_mask
