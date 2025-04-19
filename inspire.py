@@ -187,7 +187,8 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
         oversampling_neighbours: int = 10,
         cache_size: int = None,
         step_size: int = 2,
-        oversampling_per_step: int = 100,
+        oversampling_per_step: int = None,
+        oversampling_ratio: float = None,
         bagging_: bool = True,
         approximate_knn_: bool = True,
         remove_outliers_: bool = True,
@@ -217,6 +218,7 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             cache_size (int): Size of the KNN cache (number of neighbors to cache). If None, it is determined automatically.
             step_size (int): Number of models trained per iteration.
             oversampling_per_step (int): Number of synthetic samples to generate per step.
+            oversampling_ratio (float): The desired proportion of synthetic samples to generate relative to the number of original minority class samples. Must be in the range (0, 1].
             bagging_ (bool): Whether to use bagging (via stratified folds).
             approximate_knn_ (bool): Whether to use approximate KNN search.
             remove_outliers_ (bool): Whether to perform ENN cleaning.
@@ -245,6 +247,17 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
 
         if self.n_estimators % step_size != 0:
             raise ValueError("n_estimators must be divisible by step_size")
+
+        if not perform_oversampling_:
+            pass
+        elif oversampling_per_step and oversampling_ratio:
+            raise ValueError(
+                "Specify only one of 'oversampling_per_step' or 'oversampling_ratio', not both."
+            )
+        elif not (oversampling_per_step or oversampling_ratio):
+            raise ValueError(
+                "Specify only one of 'oversampling_per_step' or 'oversampling_ratio'."
+            )
 
         if "neighbours" not in bp_kwargs:
             raise ValueError("bp_kwargs must contain 'neighbours' key")
@@ -324,6 +337,12 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             if save_history_:
                 self._save_history_entry("BR", border_mask=border_mask)
 
+        # Step 3.5: Determine oversampling_per_step based on the oversampling ratio.
+        if not oversampling_per_step and oversampling_ratio:
+            n_minority = sum(minority_mask)
+            n_majority = X_clean.shape[0] - n_minority
+            oversampling_per_step = int((n_majority - n_minority) * oversampling_ratio)
+
         # Step 4: Split the cleaned training data into folds.
         if bagging_:
             skf = StratifiedKFold(n_splits=self.n_estimators, **stratified_kwargs)
@@ -332,7 +351,9 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
                 self._save_history_entry("Bagging", folds=folds)
         else:
             indices = np.arange(len(X_clean))
-            folds = [(indices, indices) for _ in range(self.n_estimators)]
+            folds = [(indices, indices)] * self.n_estimators
+            if save_history_:
+                self._save_history_entry("Bagging", folds="Disabled")
 
         # initialize smote and training cache
         cached_class_preds = None
