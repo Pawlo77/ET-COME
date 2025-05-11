@@ -363,94 +363,187 @@ class InspireClassifier(BaseEstimator, ClassifierMixin):
             k_neighbors=oversampling_neighbours,
         )
 
-        # Step 5: Iterative training using parallel execution.
-        with concurrent.futures.ThreadPoolExecutor(n_jobs) as executor:
-            for i in range(self.n_estimators // step_size):
-                X_synth, y_synth = None, None
+        if self.n_estimators // step_size != 1:
+            # Step 5: Iterative training using parallel execution.
+            with concurrent.futures.ThreadPoolExecutor(n_jobs) as executor:
+                for i in range(self.n_estimators // step_size):
+                    X_synth, y_synth = None, None
 
-                if i > 0:
+                    if i > 0:
+                        with TimedLogger(
+                            f"Performing adaptive optimizations (step {i})",
+                            logger=self._logger,
+                            level=logging.INFO,
+                        ):
+                            batch_models = self._models[-step_size:]
+                            preds, cached_class_preds = self._evaluate_batch(
+                                X_val,
+                                y_val,
+                                batch_models,
+                                cached_class_preds=cached_class_preds,
+                            )
+                            if save_history_:
+                                self._save_history_entry(
+                                    f"Batch__{i}__preds",
+                                    preds=preds,
+                                    cached_class_preds=cached_class_preds,
+                                )
+                            if perform_oversampling_:
+                                if save_history_:
+                                    bp_mask, bp_history = self._identify_bp(
+                                        X_clean,
+                                        y_val,
+                                        minority_mask=minority_mask,
+                                        val_minority_mask=val_minority_mask,
+                                        class_preds=cached_class_preds,
+                                        return_history_=True,
+                                        **bp_kwargs,
+                                    )
+                                else:
+                                    bp_history = {}
+                                    bp_mask = self._identify_bp(
+                                        X_clean,
+                                        y_val,
+                                        minority_mask=minority_mask,
+                                        val_minority_mask=val_minority_mask,
+                                        class_preds=cached_class_preds,
+                                        return_history_=False,
+                                        **bp_kwargs,
+                                    )
+
+                                # calculate regions to oversample
+                                oversampling_indeces = indeces[border_mask & bp_mask]
+                                X_to_oversample = X_clean[oversampling_indeces]
+
+                                if len(X_to_oversample) > 0:
+                                    X_synth, y_synth = self._perform_smote(
+                                        X_clean, y_clean, X_to_oversample
+                                    )
+                                else:
+                                    self._logger.warning(
+                                        "No regions to oversample found."
+                                    )
+
+                                if save_history_:
+                                    self._save_history_entry(
+                                        f"Batch__{i}__oversampling",
+                                        oversampling_indeces=oversampling_indeces,
+                                        X_synth=X_synth,
+                                        y_synth=y_synth,
+                                        **bp_history,
+                                    )
+
+                    # train next models batch
                     with TimedLogger(
-                        f"Performing adaptive optimizations (step {i})",
+                        f"Training models (step {i})",
                         logger=self._logger,
                         level=logging.INFO,
                     ):
-                        batch_models = self._models[-step_size:]
-                        preds, cached_class_preds = self._evaluate_batch(
-                            X_val,
-                            y_val,
-                            batch_models,
-                            cached_class_preds=cached_class_preds,
-                        )
-                        if save_history_:
-                            self._save_history_entry(
-                                f"Batch__{i}__preds",
-                                preds=preds,
-                                cached_class_preds=cached_class_preds,
+                        futures = [
+                            executor.submit(
+                                InspireClassifier._train_model,
+                                clf=copy.deepcopy(self.base_estimator),
+                                X_clean=X_clean,
+                                y_clean=y_clean,
+                                folds=folds,
+                                fold_idx=i * step_size + j,
+                                X_synth=X_synth,
+                                y_synth=y_synth,
                             )
-                        if perform_oversampling_:
-                            if save_history_:
-                                bp_mask, bp_history = self._identify_bp(
-                                    X_clean,
-                                    y_val,
-                                    minority_mask=minority_mask,
-                                    val_minority_mask=val_minority_mask,
-                                    class_preds=cached_class_preds,
-                                    return_history_=True,
-                                    **bp_kwargs,
-                                )
-                            else:
-                                bp_history = {}
-                                bp_mask = self._identify_bp(
-                                    X_clean,
-                                    y_val,
-                                    minority_mask=minority_mask,
-                                    val_minority_mask=val_minority_mask,
-                                    class_preds=cached_class_preds,
-                                    return_history_=False,
-                                    **bp_kwargs,
-                                )
+                            for j in range(step_size)
+                        ]
+                        for future in concurrent.futures.as_completed(futures):
+                            self._models.append(future.result())
+        else:
+            if perform_oversampling_:
+                eval_model = InspireClassifier._train_model(
+                    clf=copy.deepcopy(self.base_estimator),
+                    X_clean=X_clean,
+                    y_clean=y_clean,
+                    folds=folds,
+                    fold_idx=None,
+                    X_synth=None,
+                    y_synth=None,
+                )
 
-                            # calculate regions to oversample
-                            oversampling_indeces = indeces[border_mask & bp_mask]
-                            X_to_oversample = X_clean[oversampling_indeces]
+                preds, cached_class_preds = self._evaluate_batch(
+                    X_val,
+                    y_val,
+                    [eval_model],
+                    cached_class_preds=cached_class_preds,
+                )
+                if save_history_:
+                    self._save_history_entry(
+                        "Batch__1__preds",
+                        preds=preds,
+                        cached_class_preds=cached_class_preds,
+                    )
+                if save_history_:
+                    bp_mask, bp_history = self._identify_bp(
+                        X_clean,
+                        y_val,
+                        minority_mask=minority_mask,
+                        val_minority_mask=val_minority_mask,
+                        class_preds=cached_class_preds,
+                        return_history_=True,
+                        **bp_kwargs,
+                    )
+                else:
+                    bp_history = {}
+                    bp_mask = self._identify_bp(
+                        X_clean,
+                        y_val,
+                        minority_mask=minority_mask,
+                        val_minority_mask=val_minority_mask,
+                        class_preds=cached_class_preds,
+                        return_history_=False,
+                        **bp_kwargs,
+                    )
 
-                            if len(X_to_oversample) > 0:
-                                X_synth, y_synth = self._perform_smote(
-                                    X_clean, y_clean, X_to_oversample
-                                )
-                            else:
-                                self._logger.warning("No regions to oversample found.")
+                # calculate regions to oversample
+                oversampling_indeces = indeces[border_mask & bp_mask]
+                X_to_oversample = X_clean[oversampling_indeces]
 
-                            if save_history_:
-                                self._save_history_entry(
-                                    f"Batch__{i}__oversampling",
-                                    oversampling_indeces=oversampling_indeces,
-                                    X_synth=X_synth,
-                                    y_synth=y_synth,
-                                    **bp_history,
-                                )
+                if len(X_to_oversample) > 0:
+                    X_synth, y_synth = self._perform_smote(
+                        X_clean, y_clean, X_to_oversample
+                    )
+                else:
+                    self._logger.warning("No regions to oversample found.")
 
-                # train next models batch
-                with TimedLogger(
-                    f"Training models (step {i})",
-                    logger=self._logger,
-                    level=logging.INFO,
-                ):
-                    futures = [
-                        executor.submit(
-                            InspireClassifier._train_model,
-                            clf=copy.deepcopy(self.base_estimator),
-                            X_clean=X_clean,
-                            y_clean=y_clean,
-                            folds=folds,
-                            fold_idx=i * step_size + j,
-                            X_synth=X_synth,
-                            y_synth=y_synth,
-                        )
-                        for j in range(step_size)
-                    ]
-                    for future in concurrent.futures.as_completed(futures):
-                        self._models.append(future.result())
+                if save_history_:
+                    self._save_history_entry(
+                        "Batch__1__oversampling",
+                        oversampling_indeces=oversampling_indeces,
+                        X_synth=X_synth,
+                        y_synth=y_synth,
+                        **bp_history,
+                    )
+
+                self._models.append(
+                    InspireClassifier._train_model(
+                        clf=copy.deepcopy(self.base_estimator),
+                        X_clean=X_clean,
+                        y_clean=y_clean,
+                        folds=folds,
+                        fold_idx=None,
+                        X_synth=None,
+                        y_synth=None,
+                    )
+                )
+
+            else:
+                self._models.append(
+                    InspireClassifier._train_model(
+                        clf=copy.deepcopy(self.base_estimator),
+                        X_clean=X_clean,
+                        y_clean=y_clean,
+                        folds=folds,
+                        fold_idx=None,
+                        X_synth=None,
+                        y_synth=None,
+                    )
+                )
 
         # remove all cache and data no longer needed
         if cleanup_:
