@@ -1,4 +1,4 @@
-"""Utility functions for the experiments module."""
+"""Utility functions for training."""
 
 import logging
 import math
@@ -13,32 +13,92 @@ import numpy as np
 import pandas as pd
 from imblearn.datasets import fetch_datasets
 from kagglehub import KaggleDatasetAdapter
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import BaggingClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import get_scorer
 from sklearn.model_selection import ParameterGrid, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 from tqdm.notebook import tqdm
 from ucimlrepo import fetch_ucirepo
 
+from .utils import DATA_DIR
+
 RANDOM_SEED: int = 42
-HOME: str = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR: str = os.path.join(HOME, "data")
-RESULTS_DIR: str = os.path.join(HOME, "results")
 
 warnings.simplefilter("ignore")
 np.random.seed(RANDOM_SEED)
 logger = logging.getLogger(__name__)
 
 
-bagging_classifier_class = partial(
-    BaggingClassifier,
-    bootstrap=True,
-    n_jobs=-1,
-)
+# pylint: disable=all
+class MyBaggingClassifier(BaseEstimator, ClassifierMixin):
+    """
+    Custom BaggingClassifier to handle the case when the base estimator is not fitted.
+    """
+
+    def __init__(
+        self,
+        base_estimator,
+        n_estimators=10,
+        max_samples=1.0,
+        bootstrap=True,
+        random_state=None,
+        oversampler_class=None,
+    ):
+        self.base_estimator = base_estimator
+        self.n_estimators = n_estimators
+        self.max_samples = max_samples
+        self.bootstrap = bootstrap
+        self.random_state = random_state
+        self.oversampler_class = oversampler_class
+
+    def fit(self, X, y):
+        X, y = check_X_y(X, y)
+        self.classes_ = np.unique(y)
+        self.estimators_ = []
+        self.random_state_ = np.random.RandomState(self.random_state)
+
+        for i in range(self.n_estimators):
+            # Bootstrap sample
+            indices = self.random_state_.choice(
+                np.arange(len(X)),
+                size=int(self.max_samples * len(X)),
+                replace=self.bootstrap,
+            )
+            X_sample, y_sample = X[indices], y[indices]
+
+            # Optional oversampling
+            if self.oversampler_class is not None:
+                oversampler = self.oversampler_class(
+                    random_state=self.random_state_ + 10000 + i
+                )
+                X_sample, y_sample = oversampler.fit_resample(X_sample, y_sample)
+
+            estimator = clone(self.base_estimator)
+            estimator.fit(X_sample, y_sample)
+            self.estimators_.append(estimator)
+
+        return self
+
+    def predict(self, X):
+        check_is_fitted(self, "estimators_")
+        X = check_array(X)
+
+        predictions = np.array([est.predict(X) for est in self.estimators_])
+        majority_votes = np.apply_along_axis(
+            lambda x: np.bincount(x).argmax(), axis=0, arr=predictions
+        )
+        return majority_votes
+
+    def predict_proba(self, X):
+        check_is_fitted(self, "estimators_")
+        X = check_array(X)
+
+        probas = np.mean([est.predict_proba(X) for est in self.estimators_], axis=0)
+        return probas
 
 
 class FetchException(Exception):
@@ -337,6 +397,7 @@ def evaluate_wrapper(
     base_estimator_class: Callable[..., BaseEstimator],
     scorers: Dict[str, Any],
     random_state: int = RANDOM_SEED,
+    bagging_classifier_class: Callable[..., BaseEstimator] | None = None,
 ) -> Dict[str, Any]:
     """
     Evaluate a single parameter setting using the ParamRunner.evaluate method.
@@ -354,7 +415,8 @@ def evaluate_wrapper(
             Class of the base estimator to instantiate.
         scorers (Dict[str, Any]): Dictionary of scorer functions.
         random_state (int): Random seed for reproducibility.
-
+        bagging_classifier_class (Callable[..., BaseEstimator] | None):
+            Class of the bagging classifier to instantiate.
     Returns:
         Dict[str, Any]: Dictionary of evaluation results.
     """
@@ -369,6 +431,7 @@ def evaluate_wrapper(
         base_estimator_class,
         scorers,
         random_state,
+        bagging_classifier_class=bagging_classifier_class,
     )
 
 
@@ -386,31 +449,33 @@ class ParamRunner(BaseEstimator):
         scoring: Dict[str, str],
         option: str,
         random_state: int = RANDOM_SEED,
+        bagging_classifier_class: Callable[..., BaseEstimator] | None = None,
         n_jobs: int = 1,
     ) -> None:
         """
         Initialize the ParamRunner.
 
         Args:
-            base_estimator_class (Callable[..., BaseEstimator]):
-                Class of the base estimator.
-            param_grid (Dict[str, Any]):
-                Dictionary representing the parameter grid.
-            scoring (Dict[str, str]):
-                Dictionary of scoring metrics.
-            option (str):
-                Option for evaluation (e.g., "bagging").
-            random_state (int, optional):
-                Random seed for reproducibility.
-            n_jobs (int, optional):
-                Number of jobs for parallel processing. Defaults to 1.
+            base_estimator_class (Callable[..., BaseEstimator]): Class of the base estimator.
+            param_grid (Dict[str, Any]): Dictionary representing the parameter grid.
+            scoring (Dict[str, str]): Dictionary of scoring metrics.
+            option (str): Option for evaluation (e.g., "bagging").
+            random_state (int, optional): Random seed for reproducibility.
+            n_jobs (int, optional): Number of jobs for parallel processing. Defaults to 1.
+            bagging_classifier_class (Callable[..., BaseEstimator] | None): Class of the
+                bagging classifier to instantiate.
         """
         self.base_estimator_class = base_estimator_class
+        self.bagging_classifier_class = bagging_classifier_class
+
         self.param_grid = param_grid
         self.scoring = scoring
+
         self.option = option
+
         self.n_jobs = n_jobs
         self.random_state = random_state
+
         self.results_: pd.DataFrame | None = None
         self._scorers: Dict[str, Any] | None = None
 
@@ -429,7 +494,6 @@ class ParamRunner(BaseEstimator):
             y_train (np.ndarray): Training targets.
             X_test (np.ndarray): Testing features.
             y_test (np.ndarray): Testing targets.
-
         Returns:
             ParamRunner: The fitted ParamRunner instance with results saved in results_.
         """
@@ -450,6 +514,7 @@ class ParamRunner(BaseEstimator):
                 self.base_estimator_class,
                 self._scorers,
                 self.random_state,
+                bagging_classifier_class=self.bagging_classifier_class,
             )
         else:
             results = []
@@ -464,6 +529,7 @@ class ParamRunner(BaseEstimator):
                     self.base_estimator_class,
                     self._scorers,
                     self.random_state,
+                    bagging_classifier_class=self.bagging_classifier_class,
                 )
                 results.append(result)
 
@@ -483,6 +549,7 @@ class ParamRunner(BaseEstimator):
         base_estimator_class: Callable[..., BaseEstimator],
         scorers: Dict[str, Any],
         random_state: int = RANDOM_SEED,
+        bagging_classifier_class: Callable[..., BaseEstimator] | None = None,
     ) -> Dict[str, Any]:
         """
         Evaluate a single set of parameters with training and testing data.
@@ -498,16 +565,27 @@ class ParamRunner(BaseEstimator):
                 Class of the base estimator.
             scorers (Dict[str, Any]): Dictionary of scorer functions.
             random_state (int): Random seed for reproducibility.
-
+            bagging_classifier_class (Callable[..., BaseEstimator] | None):
+                Class of the bagging classifier to instantiate.
         Returns:
             Dict[str, Any]: Dictionary containing parameter configuration and scores.
+        Raises:
+            ValueError: If n_estimators is not in params for bagging.
         """
         # Instantiate model with or without bagging.
         if option == "bagging":
-            n_bagging_estimators = params.pop("n_bagging_estimators")
+            if "n_estimators" not in params:
+                raise ValueError("n_estimators must be in params for bagging.")
+            if bagging_classifier_class is None:
+                raise ValueError(
+                    "bagging_classifier_class must be provided for bagging."
+                )
+            n_estimators = params.pop("n_estimators")
             model = bagging_classifier_class(
-                estimator=base_estimator_class(**params, random_state=random_state),
-                n_estimators=n_bagging_estimators,
+                base_estimator=base_estimator_class(
+                    **params, random_state=random_state
+                ),
+                n_estimators=n_estimators,
                 random_state=random_state,
             )
         else:
@@ -521,9 +599,7 @@ class ParamRunner(BaseEstimator):
                 if name == "roc_auc":
                     if hasattr(model, "predict_proba"):
                         y_proba = model.predict_proba(X)[:, 1]
-                        mode_scores[name] = scorer._score_func(
-                            y, y_proba
-                        )  # pylint: disable=protected-access
+                        mode_scores[name] = scorer._score_func(y, y_proba)  # pylint: disable=protected-access
                     else:
                         mode_scores[name] = None
                 else:
@@ -543,6 +619,7 @@ class ParamRunner(BaseEstimator):
         base_estimator_class: Callable[..., BaseEstimator],
         scorers: Dict[str, Any],
         random_state: int = RANDOM_SEED,
+        bagging_classifier_class: Callable[..., BaseEstimator] | None = None,
     ) -> List[Dict[str, Any]]:
         """
         Run evaluations in parallel using multiprocessing.
@@ -557,7 +634,8 @@ class ParamRunner(BaseEstimator):
                 Class of the base estimator.
             scorers (Dict[str, Any]): Dictionary of scorer functions.
             random_state (int): Random seed for reproducibility.
-
+            bagging_classifier_class (Callable[..., BaseEstimator] | None):
+                Class of the bagging classifier to instantiate.
         Returns:
             List[Dict[str, Any]]: List of evaluation results.
         """
@@ -567,6 +645,7 @@ class ParamRunner(BaseEstimator):
                 evaluate_wrapper,
                 option=option,
                 base_estimator_class=base_estimator_class,
+                bagging_classifier_class=bagging_classifier_class,
                 scorers=scorers,
                 random_state=random_state,
             )
@@ -576,57 +655,3 @@ class ParamRunner(BaseEstimator):
             ):
                 results.append(result)
         return results
-
-
-def read_results(run_id: int = 0, results_dir: str = RESULTS_DIR) -> pd.DataFrame:
-    """
-    Read the results from the specified run directory and return a DataFrame.
-
-    Args:
-        run_id (int, optional): The ID of the run to read results from.
-        results_dir (str, optional): The directory where the results are stored.
-    Returns:
-        pd.DataFrame: A DataFrame containing the results of the specified run.
-    """
-    run_dir = os.path.join(results_dir, f"run_{run_id}")
-
-    results_df = None
-    for file in os.listdir(run_dir):
-        if file.endswith(".pkl"):
-            (dataset_name, smote_name, model_name, option, take) = os.path.basename(
-                os.path.splitext(file)[0]
-            ).split("__")
-            cur_df = pd.read_json(
-                os.path.join(run_dir, file), orient="records", lines=True
-            )
-            cur_df["dataset_name"] = dataset_name
-            cur_df["smote_name"] = smote_name
-            cur_df["model_name"] = model_name
-            cur_df["option"] = option
-            cur_df["take"] = take
-            cur_df["run_id"] = run_id
-
-            for stage in ["train", "test"]:
-                for key in ["accuracy", "f1", "precision", "recall", "roc_auc"]:
-                    cur_df[f"{stage}_{key}"] = cur_df[stage].map(lambda x: x[key])
-            cur_df = cur_df.drop(columns=["train", "test"])
-
-            if results_df is None:
-                results_df = cur_df
-            else:
-                results_df = pd.concat([results_df, cur_df], ignore_index=True)
-
-    return results_df
-
-
-def create_directories():
-    """
-    Create directories for data and results if they do not exist.
-    """
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-    if not os.path.exists(RESULTS_DIR):
-        os.makedirs(RESULTS_DIR)
-
-
-create_directories()
