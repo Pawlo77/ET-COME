@@ -38,7 +38,6 @@ bagging_classifier_class = partial(
     BaggingClassifier,
     bootstrap=True,
     n_jobs=-1,
-    random_state=RANDOM_SEED,
 )
 
 
@@ -121,16 +120,25 @@ class BinaryDatasetManager:
             ).sort_values(by="inbalance strength", ascending=True)
         return self._df
 
-    # pylint: disable=invalid-name
+    # pylint: disable=invalid-name,too-many-arguments
+    # pylint: disable=too-many-locals,too-many-positional-arguments
     def serve(
         self,
         test_size: float = 0.2,
+        test_to_valid_ratio: float = 0.5,
         random_state: int = RANDOM_SEED,
         oversampler: Any | None = None,
         preprocessing_pipeline_creator: Callable[[np.ndarray], ColumnTransformer]
         | None = None,
     ) -> Iterator[
-        Tuple[str, Tuple[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]]
+        Tuple[
+            str,
+            Tuple[
+                Tuple[np.ndarray, np.ndarray],
+                Tuple[np.ndarray, np.ndarray],
+                Tuple[np.ndarray, np.ndarray],
+            ],
+        ]
     ]:
         """
         Serve the datasets for training and testing.
@@ -139,6 +147,7 @@ class BinaryDatasetManager:
 
         Args:
             test_size (float): Proportion of the dataset to include in the test split.
+            test_to_valid_ratio (float): Ratio of test to validation set size.
             random_state (int): Random seed for reproducibility.
             oversampler (Any | None): Oversampling method to apply to the training set.
             preprocessing_pipeline_creator (Callable[[np.ndarray], ColumnTransformer] | None):
@@ -146,7 +155,7 @@ class BinaryDatasetManager:
                 a ColumnTransformer.
         Yields:
             Tuple[str, Tuple[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]]:
-                Dataset name and a tuple containing training and testing sets.
+                Dataset name and a tuple containing training, validating and testing sets.
         Raises:
             ValueError: If the dataset is not binary.
         """
@@ -159,12 +168,24 @@ class BinaryDatasetManager:
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=test_size, stratify=y, random_state=random_state
             )
+            X_test, X_valid, y_test, y_valid = train_test_split(
+                X_test,
+                y_test,
+                test_size=test_to_valid_ratio,
+                stratify=y_test,
+                random_state=random_state,
+            )
+
             logger.debug(
-                "Train shape: %s, Test shape: %s", str(X_train.shape), str(X_test.shape)
+                "Train shape: %s, Valid shape: %s, Test shape: %s",
+                str(X_train.shape),
+                str(X_valid.shape),
+                str(X_test.shape),
             )
 
             pipeline = preprocessing_pipeline_creator(X_train)
             X_train = pipeline.fit_transform(X_train)
+            X_valid = pipeline.transform(X_valid)
             X_test = pipeline.transform(X_test)
 
             if oversampler is not None:
@@ -179,6 +200,7 @@ class BinaryDatasetManager:
                 dataset_name,
                 (
                     (X_train, y_train),
+                    (X_valid, y_valid),
                     (X_test, y_test),
                 ),
             )
@@ -313,6 +335,7 @@ def evaluate_wrapper(
     option: str,
     base_estimator_class: Callable[..., BaseEstimator],
     scorers: Dict[str, Any],
+    random_state: int = RANDOM_SEED,
 ) -> Dict[str, Any]:
     """
     Evaluate a single parameter setting using the ParamRunner.evaluate method.
@@ -329,16 +352,26 @@ def evaluate_wrapper(
         base_estimator_class (Callable[..., BaseEstimator]):
             Class of the base estimator to instantiate.
         scorers (Dict[str, Any]): Dictionary of scorer functions.
+        random_state (int): Random seed for reproducibility.
 
     Returns:
         Dict[str, Any]: Dictionary of evaluation results.
     """
     params, X_train, y_train, X_test, y_test = args
     return ParamRunner.evaluate(
-        params, X_train, y_train, X_test, y_test, option, base_estimator_class, scorers
+        params,
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+        option,
+        base_estimator_class,
+        scorers,
+        random_state,
     )
 
 
+# pylint: disable=too-many-instance-attributes
 class ParamRunner(BaseEstimator):
     """
     A parameter runner class for model evaluation over a grid of parameters.
@@ -351,6 +384,7 @@ class ParamRunner(BaseEstimator):
         param_grid: Dict[str, Any],
         scoring: Dict[str, str],
         option: str,
+        random_state: int = RANDOM_SEED,
         n_jobs: int = 1,
     ) -> None:
         """
@@ -365,6 +399,8 @@ class ParamRunner(BaseEstimator):
                 Dictionary of scoring metrics.
             option (str):
                 Option for evaluation (e.g., "bagging").
+            random_state (int, optional):
+                Random seed for reproducibility.
             n_jobs (int, optional):
                 Number of jobs for parallel processing. Defaults to 1.
         """
@@ -373,6 +409,7 @@ class ParamRunner(BaseEstimator):
         self.scoring = scoring
         self.option = option
         self.n_jobs = n_jobs
+        self.random_state = random_state
         self.results_: pd.DataFrame | None = None
         self._scorers: Dict[str, Any] | None = None
 
@@ -411,6 +448,7 @@ class ParamRunner(BaseEstimator):
                 self.option,
                 self.base_estimator_class,
                 self._scorers,
+                self.random_state,
             )
         else:
             results = []
@@ -424,6 +462,7 @@ class ParamRunner(BaseEstimator):
                     self.option,
                     self.base_estimator_class,
                     self._scorers,
+                    self.random_state,
                 )
                 results.append(result)
 
@@ -442,6 +481,7 @@ class ParamRunner(BaseEstimator):
         option: str,
         base_estimator_class: Callable[..., BaseEstimator],
         scorers: Dict[str, Any],
+        random_state: int = RANDOM_SEED,
     ) -> Dict[str, Any]:
         """
         Evaluate a single set of parameters with training and testing data.
@@ -456,6 +496,7 @@ class ParamRunner(BaseEstimator):
             base_estimator_class (Callable[..., BaseEstimator]):
                 Class of the base estimator.
             scorers (Dict[str, Any]): Dictionary of scorer functions.
+            random_state (int): Random seed for reproducibility.
 
         Returns:
             Dict[str, Any]: Dictionary containing parameter configuration and scores.
@@ -464,12 +505,15 @@ class ParamRunner(BaseEstimator):
         if option == "bagging":
             n_bagging_estimators = params.pop("n_bagging_estimators")
             model = bagging_classifier_class(
-                base_estimator=base_estimator_class(**params),
+                base_estimator=base_estimator_class(
+                    **params, random_state=random_state
+                ),
                 n_estimators=n_bagging_estimators,
+                random_state=random_state,
             )
         else:
-            model = base_estimator_class(**params)
-
+            model = base_estimator_class(**params, random_state=random_state)
+        print(random_state)
         model.fit(X_train, y_train)
 
         scores: Dict[str, Any] = {"params": params}
@@ -498,6 +542,7 @@ class ParamRunner(BaseEstimator):
         option: str,
         base_estimator_class: Callable[..., BaseEstimator],
         scorers: Dict[str, Any],
+        random_state: int = RANDOM_SEED,
     ) -> List[Dict[str, Any]]:
         """
         Run evaluations in parallel using multiprocessing.
@@ -511,6 +556,7 @@ class ParamRunner(BaseEstimator):
             base_estimator_class (Callable[..., BaseEstimator]):
                 Class of the base estimator.
             scorers (Dict[str, Any]): Dictionary of scorer functions.
+            random_state (int): Random seed for reproducibility.
 
         Returns:
             List[Dict[str, Any]]: List of evaluation results.
@@ -522,6 +568,7 @@ class ParamRunner(BaseEstimator):
                 option=option,
                 base_estimator_class=base_estimator_class,
                 scorers=scorers,
+                random_state=random_state,
             )
             results: List[Dict[str, Any]] = []
             for result in tqdm(
