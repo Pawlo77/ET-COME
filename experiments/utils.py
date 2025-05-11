@@ -513,7 +513,6 @@ class ParamRunner(BaseEstimator):
             )
         else:
             model = base_estimator_class(**params, random_state=random_state)
-        print(random_state)
         model.fit(X_train, y_train)
 
         scores: Dict[str, Any] = {"params": params}
