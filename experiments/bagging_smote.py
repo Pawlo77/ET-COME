@@ -34,6 +34,15 @@ def main():
         "--advanced", action="store_true", help="Use the ADVANCED oversampling option."
     )
     parser.add_argument(
+        "--start",
+        type=int,
+        default=None,
+        help="Start index for the experiment (optional).",
+    )
+    parser.add_argument(
+        "--end", type=int, default=None, help="End index for the experiment (optional)."
+    )
+    parser.add_argument(
         "--experiment-name",
         type=str,
         help="Name of the experiment.",
@@ -59,6 +68,8 @@ def main():
 
     with TimedLogger("Running experiment", logger=logger, level=logging.INFO):
         perform_experiment(
+            start=args.start,
+            end=args.end,
             experiment_name=args.experiment_name,
             model_name="DecisionTree",
             model_class=DecisionTreeClassifier,

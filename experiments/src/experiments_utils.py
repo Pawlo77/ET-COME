@@ -109,6 +109,8 @@ def perform_experiment(
     oversampling_classes: Tuple[Tuple[str, Any]] = OVERSAMPLING_CLASSES,
     oversampling_option: OversamplingOptions = OversamplingOptions.BASIC,
     base_random_state: int = RANDOM_SEED,
+    start: int = None,
+    end: int = None,
 ):
     """
     Perform the experiment.
@@ -129,6 +131,8 @@ def perform_experiment(
         oversampling_classes (Tuple[Tuple[str, Any]]): The oversampling classes.
         oversampling_option (OversamplingOptions): The oversampling option.
         base_random_state (int): The base random state for reproducibility.
+        start (int): The start index for the experiment.
+        end (int): The end index for the experiment.
     """
     results_dir = os.path.join(results_dir, f"run_{experiment_name}")
     os.makedirs(results_dir, exist_ok=True)
@@ -142,6 +146,7 @@ def perform_experiment(
     performed_runs = _get_performed_runs(results_dir=results_dir)
     progress_bar = tqdm(total=total_cases, desc="Total progress")
 
+    i = 0
     for n_neighbors in oversampling_neighbors:
         for oversampler_name, oversampler_class in oversampling_classes:
             oversampler_class = _get_oversampler_class(
@@ -159,6 +164,14 @@ def perform_experiment(
                 else None,
             ):
                 for take in range(1, n_takes + 1):
+                    i += 1
+                    if start is not None and i < start:
+                        progress_bar.update(1)
+                        progress_bar.refresh()
+                        continue
+                    if end is not None and i > end:
+                        break
+
                     random_state = base_random_state + take
 
                     filename = (
@@ -175,6 +188,7 @@ def perform_experiment(
                                 )
                             }
                         )
+                        progress_bar.refresh()
                         continue
 
                     if oversampling_option == OversamplingOptions.ADVANCED:
@@ -215,3 +229,4 @@ def perform_experiment(
                             "info": f"{model_name} ({oversampler_name}) on {dataset_name} ({take})"
                         }
                     )
+                    progress_bar.refresh()
