@@ -76,7 +76,7 @@ class MyBaggingClassifier(BaseEstimator, ClassifierMixin):
             # Optional oversampling
             if self.oversampler_class is not None:
                 oversampler = self.oversampler_class(
-                    random_state=self.random_state_ + 10000 + i
+                    random_state=self.random_state + 10000 + i
                 )
                 X_sample, y_sample = oversampler.fit_resample(X_sample, y_sample)
 
