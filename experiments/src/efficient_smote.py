@@ -55,9 +55,9 @@ class EfficientSMOTE(SMOTE):
             if n_samples == 0:
                 continue
 
-            indeces = np.flatnonzero(y == class_sample)
-            X_class = X_to_oversample[indeces]
-            nns = self._knn(indeces, k=self.k_neighbors, return_distances_=False)
+            indices = np.flatnonzero(y == class_sample)
+            X_class = X_to_oversample[indices]
+            nns = self._knn(indices, k=self.k_neighbors, return_distances_=False)
 
             X_new, y_new = self._make_samples(
                 X_class,

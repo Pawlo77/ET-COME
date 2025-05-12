@@ -2,7 +2,7 @@
 
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, List, Tuple
 
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
@@ -59,6 +59,10 @@ class BaggingClassifier(BaseEstimator, ClassifierMixin):
         self.oversampler_class = oversampler_class
         self.threads = threads
 
+        self.classes_ = None  # support for sklearn
+
+        self._fitted_ = False
+
     def fit(self, X: np.ndarray, y: np.ndarray) -> "BaggingClassifier":
         """
         Fit the BaggingClassifier to the training data.
@@ -68,58 +72,35 @@ class BaggingClassifier(BaseEstimator, ClassifierMixin):
         Returns:
             BaggingClassifier: Fitted BaggingClassifier instance.
         """
+        if self._fitted_:
+            raise ValueError("This BaggingClassifier instance is already fitted.")
+
         X, y = check_X_y(X, y)
         self.classes_ = np.unique(y)
         self.estimators_ = []
         self.random_state_ = np.random.RandomState(self.random_state)
 
         # logic for oversampling with class ratio
-        classes = np.unique(y)
-        if len(classes) != 2:
+        if len(self.classes_) != 2:
             raise ValueError(
                 "This bagging classifier only supports binary classification."
             )
-        idx_0 = np.where(y == classes[0])[0]
-        idx_1 = np.where(y == classes[1])[0]
-        n0 = int(len(idx_0) * self.max_samples)
-        n1 = int(len(idx_1) * self.max_samples)
-
-        def fit_estimator(i: int) -> BaseEstimator:
-            """
-            Fit a single base estimator on a random subset of the data.
-            Args:
-                i (int): Index of the estimator.
-            Returns:
-                BaseEstimator: Fitted base estimator.
-            """
-            # Bootstrap sample
-            # Maintain the original class ratio in the sampled indices.
-            indices_0 = self.random_state_.choice(
-                idx_0, size=n0, replace=self.bootstrap
-            )
-            indices_1 = self.random_state_.choice(
-                idx_1, size=n1, replace=self.bootstrap
-            )
-            indices = np.concatenate([indices_0, indices_1])
-            X_sample, y_sample = X[indices], y[indices]
-
-            # Optional oversampling
-            if self.oversampler_class is not None:
-                oversampler = self.oversampler_class(
-                    random_state=self.random_state + 10000 + i
-                )
-                X_sample, y_sample = oversampler.fit_resample(X_sample, y_sample)
-
-            estimator = clone(self.base_estimator)
-            estimator.fit(X_sample, y_sample)
-            return estimator
+        ratios = self.get_class_ratio(y)
 
         with ThreadPoolExecutor(self.threads) as executor:
             futures = [
-                executor.submit(fit_estimator, i) for i in range(self.n_estimators)
+                executor.submit(
+                    self._train_model,
+                    X=X,
+                    y=y,
+                    ratios=ratios,
+                    idx=i,
+                )
+                for i in range(self.n_estimators)
             ]
             self.estimators_ = [f.result() for f in futures]
 
+        self._fitted_ = True
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -130,14 +111,7 @@ class BaggingClassifier(BaseEstimator, ClassifierMixin):
         Returns:
             np.ndarray: Predicted class labels.
         """
-        check_is_fitted(self, "estimators_")
-        X = check_array(X)
-
-        predictions = np.array([est.predict(X) for est in self.estimators_])
-        majority_votes = np.apply_along_axis(
-            lambda x: np.bincount(x).argmax(), axis=0, arr=predictions
-        )
-        return majority_votes
+        return self.vote(X, proba_=False)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """
@@ -147,8 +121,130 @@ class BaggingClassifier(BaseEstimator, ClassifierMixin):
         Returns:
             np.ndarray: Predicted class probabilities.
         """
-        check_is_fitted(self, "estimators_")
+        return self.vote(X, proba_=True)
+
+    def ratio_aware_bootstrap(
+        self, X: np.ndarray, y: np.ndarray, ratios: List[Tuple[np.ndarray, int]]
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Create a bootstrap sample with class ratio awareness.
+
+        Args:
+            X (np.ndarray): Input features.
+            y (np.ndarray): Input labels.
+            ratios (List[Tuple[np.ndarray, int]]): Class indices and their respective sample sizes.
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: Bootstrap sample of features and labels.
+        """
+        indices = np.concatenate(
+            [
+                self.random_state_.choice(idx, size=n, replace=self.bootstrap)
+                for idx, n in ratios
+            ]
+        )
+        return X[indices], y[indices]
+
+    def get_class_ratio(self, y: np.ndarray) -> List[Tuple[np.ndarray, int]]:
+        """
+        Calculate the class ratio for oversampling.
+
+        Args:
+            y (np.ndarray): Input labels.
+        Returns:
+            List[Tuple[np.ndarray, int]]: Class indices and
+        """
+        ratios = []
+        for k in self.classes_:
+            cur_class_idx = np.where(y == k)[0]
+            ratios.append((cur_class_idx, int(len(cur_class_idx) * self.max_samples)))
+        return ratios
+
+    def _predict(self, X: np.ndarray, proba_: bool = False) -> np.ndarray:
+        """
+        Predict the class labels for the input samples using all estimators.
+
+        Args:
+            X (np.ndarray): Input samples.
+            proba_ (bool): If True, return class probabilities.
+        Returns:
+            np.ndarray: Predicted class labels.
+        """
+        check_is_fitted(self)
         X = check_array(X)
 
-        probas = np.mean([est.predict_proba(X) for est in self.estimators_], axis=0)
-        return probas
+        with ThreadPoolExecutor(self.threads) as executor:
+            futures = [executor.submit(est.predict, X) for est in self.estimators_]
+            preds = np.array([f.result() for f in futures])
+
+        return self.vote(preds, proba_)
+
+    def vote(self, preds: np.ndarray, proba_: bool = False) -> np.ndarray:
+        """
+        Perform majority voting or soft voting for preds.
+
+        Args:
+            X (np.ndarray): Input samples.
+            proba_ (bool): If True, return class probabilities.
+        Returns:
+            np.ndarray: Predicted class labels or probabilities.
+        """
+        if not proba_:
+            # Use majority voting
+            return np.apply_along_axis(
+                lambda x: np.bincount(x, minlength=len(self.classes_)).argmax(),
+                axis=0,
+                arr=preds,
+            )
+        return np.apply_along_axis(
+            lambda x: np.bincount(x, minlength=len(self.classes_)) / len(x),
+            axis=0,
+            arr=preds,
+        ).T
+
+    def _train_model(
+        self,
+        idx: int,
+        X: np.ndarray,
+        y: np.ndarray,
+        ratios: List[Tuple[np.ndarray, int]],
+        X_synth: np.ndarray | None = None,
+        y_synth: np.ndarray | None = None,
+    ) -> BaseEstimator:
+        """
+        Trains a single instance of the base classifier using training data from a cross-validation fold
+        and optional synthetic data.
+
+        Optional oversampling is exclusive with synthetic data.
+
+        Args:
+            i (int): Index of the estimator.
+            X (np.ndarray): Training data.
+            y (np.ndarray): Target labels.
+            ratios (List[Tuple[np.ndarray, int]]): Class ratios for the training data.
+            X_synth (np.ndarray | None): Optional synthetic data to include in training.
+            y_synth (np.ndarray | None): Optional labels for the synthetic data.
+        Returns:
+            BaseEstimator: A trained instance (deep-copied) of the base classifier.
+        """
+        X_sample, y_sample = self.ratio_aware_bootstrap(X=X, y=y, ratios=ratios)
+
+        if X_synth is not None:
+            X_sample = np.vstack([X_sample, X_synth])
+            y_sample = np.hstack([y_sample, y_synth])
+        elif self.oversampler_class is not None:
+            oversampler = self.oversampler_class(
+                random_state=self.random_state + 10000 + idx
+            )
+            X_sample, y_sample = oversampler.fit_resample(X_sample, y_sample)
+
+        estimator = clone(self.base_estimator)
+        estimator.fit(X_sample, y_sample)
+        return estimator
+
+    def __sklearn_is_fitted__(self) -> bool:
+        """
+        Check if the estimator is fitted.
+        Returns:
+            bool: True if fitted, False otherwise.
+        """
+        return self._fitted_

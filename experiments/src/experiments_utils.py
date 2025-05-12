@@ -39,7 +39,7 @@ OVERSAMPLING_CLASSES: Tuple[Tuple[str, Any]] = (
     # ("KMeansSMOTE", partial(KMeansSMOTE, **OVERSAMPLING_KWARGS)),
     # ("SVMSMOTE", partial(SVMSMOTE, **OVERSAMPLING_KWARGS)),
 )
-OVERSAMPLING_NEIGHBOURS: Tuple[int] = (5, 10, 15)
+OVERSAMPLING_NEIGHBORS: Tuple[int] = (3, 5, 7)
 
 SCORING: Dict[str, str] = {
     "accuracy": "accuracy",
@@ -68,7 +68,7 @@ def _get_performed_runs(results_dir: int) -> Set[str]:
 def _get_oversampler_class(
     oversampler_name: str,
     oversampler_class: BaseEstimator,
-    n_neighbours: int,
+    n_neighbors: int,
 ) -> BaseEstimator:
     """
     Get the oversampler class.
@@ -76,18 +76,18 @@ def _get_oversampler_class(
     Args:
         oversampler_name (str): The name of the oversampler.
         oversampler_class (BaseEstimator): The class of the oversampler.
-        n_neighbours (int): The number of neighbours for the oversampler.
+        n_neighbors (int): The number of neighbors for the oversampler.
     Returns:
         BaseEstimator: The class of the oversampler.
     """
     if "smote" in oversampler_name.lower():  # pylint: disable=magic-value-comparison
         return partial(
             oversampler_class,
-            k_neighbors=n_neighbours,
+            k_neighbors=n_neighbors,
         )
     return partial(
         oversampler_class,
-        n_neighbors=n_neighbours,
+        n_neighbors=n_neighbors,
     )
 
 
@@ -105,7 +105,7 @@ def perform_experiment(
     n_takes: int = 5,
     n_jobs: int = -1,
     bagging_classifier_class: BaggingClassifier = BaggingClassifier,
-    oversampling_neighbours: Tuple[int] = OVERSAMPLING_NEIGHBOURS,
+    oversampling_neighbors: Tuple[int] = OVERSAMPLING_NEIGHBORS,
     oversampling_classes: Tuple[Tuple[str, Any]] = OVERSAMPLING_CLASSES,
     oversampling_option: OversamplingOptions = OversamplingOptions.BASIC,
     base_random_state: int = RANDOM_SEED,
@@ -125,7 +125,7 @@ def perform_experiment(
         n_takes (int): Number of runs for each configuration.
         n_jobs (int): Number of jobs to run in parallel.
         bagging_classifier_class (BaggingClassifier): The bagging classifier class.
-        oversampling_neighbours (Tuple[int]): The number of neighbours for oversampling.
+        oversampling_neighbors (Tuple[int]): The number of neighbors for oversampling.
         oversampling_classes (Tuple[Tuple[str, Any]]): The oversampling classes.
         oversampling_option (OversamplingOptions): The oversampling option.
         base_random_state (int): The base random state for reproducibility.
@@ -135,19 +135,19 @@ def perform_experiment(
 
     total_cases = (
         len(oversampling_classes)
-        * len(oversampling_neighbours)
+        * len(oversampling_neighbors)
         * len(data_manager)
         * n_takes
     )
     performed_runs = _get_performed_runs(results_dir=results_dir)
     progress_bar = tqdm(total=total_cases, desc="Total progress")
 
-    for n_neighbours in oversampling_neighbours:
+    for n_neighbors in oversampling_neighbors:
         for oversampler_name, oversampler_class in oversampling_classes:
             oversampler_class = _get_oversampler_class(
                 oversampler_name,
                 oversampler_class,
-                n_neighbours,
+                n_neighbors,
             )
             for dataset_name, (
                 (X_train, y_train),

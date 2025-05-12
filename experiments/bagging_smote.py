@@ -51,13 +51,13 @@ def main():
     else:
         oversampling_option = OversamplingOptions.ADVANCED
 
-    with TimedLogger("Creating dataset manager...", logger=logger, level=logging.INFO):
+    with TimedLogger("Creating dataset manager", logger=logger, level=logging.INFO):
         data_manager = BinaryDatasetManager(
             use_additional_datasets=not args.ignore_additional_datasets,
             valid_to_test_size=None,  # no validation set
         )
 
-    with TimedLogger("Running experiment...", logger=logger, level=logging.INFO):
+    with TimedLogger("Running experiment", logger=logger, level=logging.INFO):
         perform_experiment(
             experiment_name=args.experiment_name,
             model_name="DecisionTree",
