@@ -21,7 +21,7 @@ def read_results(run_id: int = 0, results_dir: str = RESULTS_DIR) -> pd.DataFram
 
     results_df = None
     for file in os.listdir(run_dir):
-        if file.endswith(".pkl"):
+        if file.endswith(".json"):
             (dataset_name, smote_name, model_name, option, take) = os.path.basename(
                 os.path.splitext(file)[0]
             ).split("__")
@@ -40,7 +40,11 @@ def read_results(run_id: int = 0, results_dir: str = RESULTS_DIR) -> pd.DataFram
                     cur_df[f"{stage}_{key}"] = cur_df[stage].map(
                         lambda x, key=key: x[key]
                     )
-            cur_df = cur_df.drop(columns=["train", "test"])
+
+            for param in ["max_depth", "n_estimators"]:
+                cur_df[param] = cur_df["params"].apply(lambda x: x.get(param, "None"))
+
+            cur_df = cur_df.drop(columns=["train", "test", "params"])
 
             if results_df is None:
                 results_df = cur_df
