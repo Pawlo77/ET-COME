@@ -162,8 +162,8 @@ def perform_experiment(
                     random_state = base_random_state + take
 
                     filename = (
-                        f"{dataset_name}__{oversampler_name}__"
-                        + f"{model_name}__{experiment_name}__{take}.json"
+                        f"{dataset_name}__{oversampler_name}__{model_name}"
+                        + f"__{experiment_name}__{n_neighbors}__{take}.json"
                     )
                     if filename in performed_runs:
                         progress_bar.update(1)
