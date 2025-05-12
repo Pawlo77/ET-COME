@@ -111,7 +111,7 @@ class BaggingClassifier(BaseEstimator, ClassifierMixin):
         Returns:
             np.ndarray: Predicted class labels.
         """
-        return self.vote(X, proba_=False)
+        return self._predict(X, proba_=False)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """
@@ -121,7 +121,7 @@ class BaggingClassifier(BaseEstimator, ClassifierMixin):
         Returns:
             np.ndarray: Predicted class probabilities.
         """
-        return self.vote(X, proba_=True)
+        return self._predict(X, proba_=True)
 
     def ratio_aware_bootstrap(
         self, X: np.ndarray, y: np.ndarray, ratios: List[Tuple[np.ndarray, int]]
