@@ -5,6 +5,7 @@ import math
 import multiprocessing as mp
 import os
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial, reduce
 from typing import Any, Callable, Dict, Iterator, List, Tuple
 
@@ -47,6 +48,7 @@ class MyBaggingClassifier(BaseEstimator, ClassifierMixin):
         bootstrap=True,
         random_state=None,
         oversampler_class=None,
+        threads=4,
     ):
         self.base_estimator = base_estimator
         self.n_estimators = n_estimators
@@ -54,6 +56,7 @@ class MyBaggingClassifier(BaseEstimator, ClassifierMixin):
         self.bootstrap = bootstrap
         self.random_state = random_state
         self.oversampler_class = oversampler_class
+        self.threads = threads
 
     def fit(self, X, y):
         X, y = check_X_y(X, y)
@@ -61,7 +64,7 @@ class MyBaggingClassifier(BaseEstimator, ClassifierMixin):
         self.estimators_ = []
         self.random_state_ = np.random.RandomState(self.random_state)
 
-        for i in range(self.n_estimators):
+        def fit_estimator(i):
             # Bootstrap sample
             indices = self.random_state_.choice(
                 np.arange(len(X)),
@@ -79,7 +82,13 @@ class MyBaggingClassifier(BaseEstimator, ClassifierMixin):
 
             estimator = clone(self.base_estimator)
             estimator.fit(X_sample, y_sample)
-            self.estimators_.append(estimator)
+            return estimator
+
+        with ThreadPoolExecutor(self.threads) as executor:
+            futures = [
+                executor.submit(fit_estimator, i) for i in range(self.n_estimators)
+            ]
+            self.estimators_ = [f.result() for f in futures]
 
         return self
 
