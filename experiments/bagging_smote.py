@@ -43,6 +43,9 @@ def main():
         "--end", type=int, default=None, help="End index for the experiment (optional)."
     )
     parser.add_argument(
+        "--n-jobs", type=int, default=-1, help="Number of jobs (optional)."
+    )
+    parser.add_argument(
         "--experiment-name",
         type=str,
         help="Name of the experiment.",
@@ -76,6 +79,7 @@ def main():
             param_grid=PARAM_GRID,
             data_manager=data_manager,
             oversampling_option=oversampling_option,
+            n_jobs=args.n_jobs
         )
 
 
