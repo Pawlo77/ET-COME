@@ -73,6 +73,7 @@ class BinaryDatasetManager:
         use_additional_datasets: bool = True,
         test_size: float = 0.2,
         valid_to_test_size: float | None = 0.5,
+        ignore_validation_datasets: bool = False,
     ):
         """
         Initialize the BinaryDatasetManager with the specified data home and random state.
@@ -85,6 +86,8 @@ class BinaryDatasetManager:
             valid_to_test_size (float | None): Ratio of test to validation set size.
                 If None, the test set is not split into validation and test sets and
                 validation data is set to None.
+            ignore_validation_datasets (bool): Whether to yield validation datasets.
+                If True, validation datasets are not yielded yet they are still being created.
         """
         logger.info("Fetching datasets from imbalanced-learn...")
         self.datasets = fetch_datasets(
@@ -103,6 +106,7 @@ class BinaryDatasetManager:
 
         self.test_size = test_size
         self.valid_to_test_size = valid_to_test_size
+        self.ignore_validation_datasets = ignore_validation_datasets
         self._df = None
 
     @property
@@ -186,7 +190,7 @@ class BinaryDatasetManager:
             pipeline = preprocessing_pipeline_creator(X_train)
             X_train = pipeline.fit_transform(X_train)
             X_test = pipeline.transform(X_test)
-            if X_val:
+            if X_val is not None:
                 X_val = pipeline.transform(X_val)
 
             if oversampler is not None:
@@ -196,6 +200,8 @@ class BinaryDatasetManager:
                     str(X_train.shape),
                     str(X_test.shape),
                 )
+            if self.ignore_validation_datasets:
+                X_val = y_val = None
 
             yield (
                 dataset_name,

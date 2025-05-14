@@ -59,7 +59,10 @@ class BaggingClassifier(BaseEstimator, ClassifierMixin):
         self.oversampler_class = oversampler_class
         self.threads = threads
 
-        self.classes_ = None  # support for sklearn
+        # support for sklearn
+        self.classes_ = None
+        self.estimators_ = []
+        self.random_state_ = np.random.RandomState(self.random_state)
 
         self._fitted_ = False
 
@@ -77,8 +80,6 @@ class BaggingClassifier(BaseEstimator, ClassifierMixin):
 
         X, y = check_X_y(X, y)
         self.classes_ = np.unique(y)
-        self.estimators_ = []
-        self.random_state_ = np.random.RandomState(self.random_state)
 
         # logic for oversampling with class ratio
         if len(self.classes_) != 2:
