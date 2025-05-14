@@ -160,11 +160,12 @@ def perform_experiment(
                     if end is not None and i > end:
                         break
 
-                    filename = (
+                    _id = (
                         f"{dataset_name}__{oversampler_name}__{model_name}"
-                        + f"__{n_neighbors}__{take}.json"
+                        + f"__{n_neighbors}__{take}"
                     )
-                    if filename in performed_runs:
+
+                    if _id in performed_runs:
                         if progress_bar is not None:
                             progress_bar.update(1)
                             progress_bar.set_postfix(
@@ -211,11 +212,25 @@ def perform_experiment(
                         verbose=verbose,
                     )
 
+                    runner.results_["dataset_name"] = dataset_name
+                    runner.results_["oversampler_name"] = oversampler_name
+                    runner.results_["model_name"] = model_name
+                    runner.results_["n_neighbors"] = n_neighbors
+                    runner.results_["take"] = take
+                    runner.results_["oversampling_option"] = oversampling_option.name
+
                     runner.results_.to_json(
-                        os.path.join(results_dir, filename),
+                        os.path.join(results_dir, "results.json"),
                         orient="records",
                         lines=True,
+                        mode="a",
                     )
+                    with open(
+                        os.path.join(results_dir, "performed_runs.txt"),
+                        mode="a",
+                        encoding="utf-8",
+                    ) as f:
+                        f.write(f"{_id}\n")
 
                     progress_bar.update(1)
                     progress_bar.set_postfix(

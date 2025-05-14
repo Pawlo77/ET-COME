@@ -286,7 +286,7 @@ class InspireClassifier(BaggingClassifier):
         # implementation is expecting 1D target arrays
         if len(y.shape) == 2:  # pylint: disable=magic-value-comparison
             y = y.ravel()
-        if len(y_val.shape) == 2:# # pylint: disable=magic-value-comparison
+        if len(y_val.shape) == 2:  # # pylint: disable=magic-value-comparison
             y_val = y_val.ravel()
 
         if save_history_:

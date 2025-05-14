@@ -32,6 +32,7 @@ def perform_experiment(
     base_random_state: int = RANDOM_SEED,
     start: int = None,
     end: int = None,
+    postfix: str = "",
 ):
     """
     Perform the experiment.
@@ -52,6 +53,7 @@ def perform_experiment(
         base_random_state (int): Base random state for reproducibility.
         start (int): Start index for the experiment.
         end (int): End index for the experiment.
+        postfix (str): Postfix for run id.
     """
     results_dir = os.path.join(results_dir, f"run_{experiment_name}")
     os.makedirs(results_dir, exist_ok=True)
@@ -77,8 +79,10 @@ def perform_experiment(
                 if end is not None and i >= end:
                     break
 
-                filename = f"{dataset_name}__inspire__{i}.json"
-                if filename in performed_runs:
+                _id = f"{dataset_name}__inspire__{i}"
+                if postfix:
+                    _id += f"__{postfix}"
+                if _id in performed_runs:
                     if progress_bar is not None:
                         progress_bar.update(1)
                         progress_bar.refresh()
@@ -115,10 +119,17 @@ def perform_experiment(
                 )
 
                 runner.results_.to_json(
-                    os.path.join(results_dir, filename),
+                    os.path.join(results_dir, "results.json"),
                     orient="records",
                     lines=True,
+                    mode="a",
                 )
+                with open(
+                    os.path.join(results_dir, "performed_runs.txt"),
+                    mode="a",
+                    encoding="utf-8",
+                ) as f:
+                    f.write(f"{_id}\n")
 
                 progress_bar.update(1)
                 progress_bar.refresh()
