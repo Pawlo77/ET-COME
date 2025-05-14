@@ -14,4 +14,14 @@ SCORING: Dict[str, str] = {
 
 def get_performed_runs(results_dir: int) -> Set[str]:
     """Get the performed runs."""
-    return set(os.listdir(results_dir))
+    results_file = os.path.join(results_dir, "performed_runs.txt")
+    if not os.path.exists(results_file):
+        with open(results_file, mode="w", encoding="utf-8"):
+            pass
+        return set()
+
+    with open(
+        os.path.join(results_dir, "performed_runs.txt"), mode="r", encoding="utf-8"
+    ) as f:
+        performed_runs = f.read().splitlines()
+    return set(performed_runs)

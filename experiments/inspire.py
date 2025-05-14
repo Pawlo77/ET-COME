@@ -77,6 +77,7 @@ def main():
             n_takes=args.n_takes,
             n_jobs=args.n_jobs,
             verbose=args.verbose,
+            postfix="evaluate" if args.evaluate else "search",
         )
 
 

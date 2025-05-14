@@ -8,7 +8,7 @@ from sklearn.tree import DecisionTreeClassifier
 from src.utils import PARAM_GRID as TREE_PARAM_GRID
 from src.utils import TimedLogger, create_logger, get_parser
 
-PARAM_GRID: Dict[str, List[str, Any]] = {
+PARAM_GRID: Dict[str, List[Any]] = {
     "n_estimators": [100, 500],
     **TREE_PARAM_GRID,
 }
