@@ -77,8 +77,9 @@ class ParamRunner(BaseEstimator):
     def __init__(
         self,
         base_estimator_class: Callable[..., BaseEstimator],
-        param_grid: Dict[str, Any],
         scoring: Dict[str, str],
+        param_grid: Dict[str, Any] | None = None,
+        param_list: List[Dict[str, Any]] | None = None,
         random_state: int = RANDOM_SEED,
         bagging_classifier_class: Callable[..., BaseEstimator] | None = None,
         n_jobs: int = 1,
@@ -88,17 +89,24 @@ class ParamRunner(BaseEstimator):
 
         Args:
             base_estimator_class (Callable[..., BaseEstimator]): Class of the base estimator.
-            param_grid (Dict[str, Any]): Dictionary representing the parameter grid.
             scoring (Dict[str, str]): Dictionary of scoring metrics.
+            param_grid (Dict[str, Any] | None): Dictionary representing the parameter grid.
+            param_list (List[Dict[str, Any]] | None): List of parameter combinations.
             random_state (int, optional): Random seed for reproducibility.
             bagging_classifier_class (Callable[..., BaseEstimator] | None): Class of the
                 bagging classifier to instantiate.
             n_jobs (int, optional): Number of jobs for parallel processing. Defaults to 1.
         """
+        if (param_grid is None and param_list is None) or (
+            param_grid is not None and param_list is not None
+        ):
+            raise RuntimeError("Either param_grid or param_list must be provided.")
+
         self.base_estimator_class = base_estimator_class
         self.bagging_classifier_class = bagging_classifier_class
 
         self.param_grid = param_grid
+        self.param_list = param_list
         self.scoring = scoring
 
         self.n_jobs = n_jobs
@@ -134,7 +142,9 @@ class ParamRunner(BaseEstimator):
         self._scorers: Dict[str, Any] = {
             name: get_scorer(metric) for name, metric in self.scoring.items()
         }
-        param_list: List[Dict[str, Any]] = list(ParameterGrid(self.param_grid))
+        param_list: List[Dict[str, Any]] = self.param_list or list(
+            ParameterGrid(self.param_grid)
+        )
 
         # multiprocessing
         if self.n_jobs > 1 or self.n_jobs == -1:
@@ -188,7 +198,7 @@ class ParamRunner(BaseEstimator):
         y_test: np.ndarray,
         base_estimator_class: Callable[..., BaseEstimator],
         scorers: Dict[str, Any],
-        bagging_classifier_class: Callable[..., BaseEstimator],
+        bagging_classifier_class: Callable[..., BaseEstimator] | None = None,
         X_val: np.ndarray | None = None,
         y_val: np.ndarray | None = None,
         random_state: int = RANDOM_SEED,
@@ -206,7 +216,7 @@ class ParamRunner(BaseEstimator):
                 Class of the base estimator.
             scorers (Dict[str, Any]): Dictionary of scorer functions.
             random_state (int): Random seed for reproducibility.
-            bagging_classifier_class (Callable[..., BaseEstimator]):
+            bagging_classifier_class (Callable[..., BaseEstimator] | None):
                 Class of the bagging classifier to instantiate.
             X_val (np.ndarray | None): Validation features.
             y_val (np.ndarray | None): Validation targets.
@@ -217,16 +227,20 @@ class ParamRunner(BaseEstimator):
             ValueError: If n_estimators is not in params for bagging.
         """
         # Instantiate model with or without bagging.
-        if "n_estimators" not in params:
-            raise ValueError("n_estimators must be in params for bagging.")
-        if bagging_classifier_class is None:
-            raise ValueError("bagging_classifier_class must be provided for bagging.")
-        n_estimators = params.pop("n_estimators")
-        model = bagging_classifier_class(
-            base_estimator=base_estimator_class(**params, random_state=random_state),
-            n_estimators=n_estimators,
-            random_state=random_state,
-        )
+        if bagging_classifier_class:
+            if "n_estimators" not in params:
+                raise ValueError("n_estimators must be in params for bagging.")
+            n_estimators = params.pop("n_estimators")
+
+            model = bagging_classifier_class(
+                base_estimator=base_estimator_class(
+                    **params, random_state=random_state
+                ),
+                n_estimators=n_estimators,
+                random_state=random_state,
+            )
+        else:
+            model = base_estimator_class(**params, random_state=random_state)
 
         if X_val is not None and y_val is not None:
             model.fit(X_train, y_train, X_val=X_val, y_val=y_val)
