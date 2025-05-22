@@ -107,10 +107,27 @@ def get_parser() -> argparse.ArgumentParser:
         help="Name of the experiment.",
         default="0",
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "--ignore-additional-datasets",
         action="store_true",
-        help="Weather to use additional dataasets.",
+        help="Whether to use additional datasets.",
+    )
+    group.add_argument(
+        "--only-additional-datasets",
+        action="store_true",
+        help="Use only additional datasets.",
+    )
+    group2 = parser.add_mutually_exclusive_group()
+    group2.add_argument(
+        "--only-large-datasets",
+        action="store_true",
+        help="Use only large datasets.",
+    )
+    group2.add_argument(
+        "--only-small-datasets",
+        action="store_true",
+        help="Use only small datasets.",
     )
     parser.add_argument(
         "--n-jobs", type=int, default=-1, help="Number of jobs to run in parallel."
