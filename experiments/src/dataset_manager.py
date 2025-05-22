@@ -3,7 +3,7 @@
 import math
 import warnings
 from functools import partial, reduce
-from typing import Any, Callable, Dict, Iterator, Tuple
+from typing import Any, Callable, Dict, Iterator, Set, Tuple
 
 import kagglehub
 import numpy as np
@@ -65,12 +65,22 @@ class BinaryDatasetManager:
         },
     }
 
+    LARGE_DATASETS: Set[str] = {
+        "isolet",
+        "Polish companies bankruptcy",
+        "webpage",
+        "protein_homo",
+    }
+
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         data_home: str = DATA_DIR,
         random_state: int = RANDOM_SEED,
         use_additional_datasets: bool = True,
+        only_additional_datasets: bool = False,
+        only_small_datasets: bool = False,
+        only_large_datasets: bool = False,
         test_size: float = 0.2,
         valid_to_test_size: float | None = 0.5,
         ignore_validation_datasets: bool = False,
@@ -82,6 +92,9 @@ class BinaryDatasetManager:
             data_home (str): Directory to store datasets.
             random_state (int): Random seed for reproducibility.
             use_additional_datasets (bool): Whether to include additional datasets.
+            only_additional_datasets (bool): Whether to use only additional datasets.
+            only_small_datasets (bool): Whether to use only small datasets.
+            only_large_datasets (bool): Whether to use only large datasets.
             test_size (float): Proportion of the dataset to include in the test split.
             valid_to_test_size (float | None): Ratio of test to validation set size.
                 If None, the test set is not split into validation and test sets and
@@ -90,16 +103,26 @@ class BinaryDatasetManager:
                 If True, validation datasets are not yielded yet they are still being created.
         """
         logger.info("Fetching datasets from imbalanced-learn...")
-        self.datasets = fetch_datasets(
-            data_home=data_home,
-            random_state=random_state,
-            shuffle=True,
-            verbose=True,
-        )
+
+        self.datasets = {}
+        if not only_additional_datasets:
+            self.datasets = fetch_datasets(
+                data_home=data_home,
+                random_state=random_state,
+                shuffle=True,
+                verbose=True,
+            )
 
         if use_additional_datasets:
             logger.info("Fetching additional datasets...")
             self.datasets.update(self._fetch_additional_datasets())
+
+        self.datasets = {
+            k: v
+            for k, v in self.datasets.items()
+            if (not only_small_datasets or k not in self.LARGE_DATASETS)
+            and (not only_large_datasets or k in self.LARGE_DATASETS)
+        }
 
         logger.info("Preparing datasets...")
         self._prepare_datasets()
@@ -222,9 +245,7 @@ class BinaryDatasetManager:
         return len(self.datasets)
 
     def _prepare_datasets(self) -> None:
-        """
-        Analyze the datasets to check for class imbalance.
-        """
+        """Analyze the datasets to check for class imbalance."""
         for val in self.datasets.values():
             val["target"] = np.where(val["target"] == 1, 1, 0)
             unique_vals, counts = np.unique(val["target"], return_counts=True)
