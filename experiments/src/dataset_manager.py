@@ -113,6 +113,9 @@ class BinaryDatasetManager:
                 verbose=True,
             )
 
+            # delete excluded datasets
+            del self.datasets["protein_homo"]
+
         if use_additional_datasets:
             logger.info("Fetching additional datasets...")
             self.datasets.update(self._fetch_additional_datasets())
