@@ -20,9 +20,9 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.utils.validation import check_X_y
 from tqdm import tqdm
 
-from .bagging_classifier import BaggingClassifier
-from .efficient_smote import EfficientSMOTE
-from .utils import TimedLogger, create_logger
+from bagging_classifier import BaggingClassifier
+from efficient_smote import EfficientSMOTE
+from utils import TimedLogger, create_logger
 
 logger = create_logger(__name__)
 
@@ -119,9 +119,7 @@ class InspireClassifier(BaggingClassifier):
             step_size (int): Number of models to train in each step.
             cache_size (int | None): Size of the KNN cache. If not provided,
                 it will be set to the maximum of enn_neighbors and
-                oversampling_neighbors. If remove_outliers_ is True,
-                it will be set to the maximum of enn_neighbors and
-                oversampling_neighbors + enn_neighbors.
+                oversampling_neighbors.
 
             oversampling_per_step (int | None): Number of samples to oversample in each step.
             oversampling_ratio (float | None): Ratio of samples to oversample
@@ -236,6 +234,7 @@ class InspireClassifier(BaggingClassifier):
         self._smote: Optional[EfficientSMOTE] = None
         self._history: List[dict] | None = None
 
+        self.logging_level = logging_level
         logger.setLevel(logging_level)
 
     @property
@@ -317,11 +316,6 @@ class InspireClassifier(BaggingClassifier):
         minority_mask = y == self.minority_class
         minority_mask_val = y_val == self.minority_class
 
-        # Step 4: Fit and cache the KNN index for the validation set
-        # (between validation set and minority class in cleaned training set
-        # as no more is needed)
-        self._fit_knn_val(X=X[minority_mask], X_val=X_val, **self.knn_kw)
-
         # Step 5: Identify border regions for oversampling.
         br_mask = self._identify_br(
             indices=indices,
@@ -330,20 +324,38 @@ class InspireClassifier(BaggingClassifier):
             save_history_=save_history_,
         )
 
+        # Step x: Clear KNN cache.
+        # Fit and cache the KNN index for minority class in training set.
+        del self._full_knn_indices, self._full_knn_distances
+        self._knn_fitted_ = False
+        self._indices_translation_map = None
+        
+        X_minority = X[minority_mask]
+        self._fit_knn(X=X_minority, **self.knn_kw)
+        
+        # Step 4: Fit and cache the KNN index for the validation set
+        # (between validation set and minority class in cleaned training set
+        # as no more is needed)
+        self._fit_knn_val(X=X_minority, X_val=X_val, **self.knn_kw)
+
         # Determine oversampling_per_step based on the oversampling ratio
         # if adaptive_oversampling_step is not enabled
         if not self.adaptive_oversampling_step and (
             not self.oversampling_per_step and self.oversampling_ratio
         ):
             n_minority = sum(minority_mask)
-            oversampling_per_step = int(n_minority * self.oversampling_ratio)
-            logger.debug("Oversampling per step: %d", oversampling_per_step)
+            n_majority = len(minority_mask) - n_minority
+            oversampling_per_step = int(n_majority * self.oversampling_ratio - n_minority)
+            
+            if oversampling_per_step < 0:
+                raise ValueError("The specified oversampling_ratio is too low: it results in fewer minority samples than majority samples after oversampling. Please increase the oversampling_ratio or check your class distribution.")
 
         # initialize smote
         self._smote = EfficientSMOTE(
             knn_callable=self._query_knn_cache,
-            sampling_strategy={self.minority_class: oversampling_per_step},
+            oversampling_per_step = oversampling_per_step,
             k_neighbors=self.oversampling_neighbors,
+            minority_class=self.minority_class,
         )
 
         # training loop variables
@@ -374,8 +386,8 @@ class InspireClassifier(BaggingClassifier):
                     X_synth, y_synth = self._perform_oversampling(
                         y_proba=y_proba,
                         indices=indices,
-                        X=X,
-                        y=y,
+                        X=X_minority,
+                        y=y[minority_mask],
                         y_val=y_val,
                         minority_mask=minority_mask,
                         minority_mask_val=minority_mask_val,
@@ -448,7 +460,7 @@ class InspireClassifier(BaggingClassifier):
         with TimedLogger("Fitting KNN index", logger=logger, level=logging.INFO):
             # between X and X
             indices, distances = self._fit_knn_helper(
-                X=X, X_query=X, k=self.cache_size + 1, **knn_kw
+                X=X, X_query=X, k=self.cache_size + 1
             )
             # Do not store the first index as it is the same observation.
             self._full_knn_indices, self._full_knn_distances = (
@@ -479,7 +491,7 @@ class InspireClassifier(BaggingClassifier):
             level=logging.INFO,
         ):
             self._knn_val_indices, self._knn_val_distances = self._fit_knn_helper(
-                X=X, X_query=X_val, k=self.val_to_train_neighbors, **knn_kw
+                X=X, X_query=X_val, k=self.val_to_train_neighbors
             )
 
         self._knn_val_fitted_ = True
@@ -749,18 +761,18 @@ class InspireClassifier(BaggingClassifier):
         minority_train_bp_indices = self._translate_val_to_train_minority(
             val_bp_indices, return_distances_=False
         ).flatten()
-
-        train_bp_mask = np.zeros(train_size, dtype=bool)
-        train_bp_mask[minority_mask][minority_train_bp_indices] = True
-
+        
+        minority_train_bp_mask = np.zeros(sum(minority_mask), dtype=bool)
+        minority_train_bp_mask[minority_train_bp_indices] = True
+            
         if not return_history_:
-            return train_bp_mask
-        return train_bp_mask, {
+            return minority_train_bp_mask
+        return minority_train_bp_mask, {
             "confidence_mask": confidence_mask,
             "y_pred": y_pred,
             "miss_class_mask": miss_class_mask,
             "val_bp_mask": val_bp_mask,
-            "bp_mask": train_bp_mask,
+            "minority_train_bp_mask": minority_train_bp_mask,
             "minority_train_bp_indices": minority_train_bp_indices,
             "minority_mask": minority_mask,
         }
@@ -794,14 +806,17 @@ class InspireClassifier(BaggingClassifier):
                 neighbors_indices.shape
             )
 
+            neighbor_minority_labels = neighbor_labels[minority_mask]
             # calculate number of neighbors in the same class as the original sample,
             # if lower than threshold * 100%, mark as borderline
             # filter out only minority class samples
-            br_mask = minority_mask & (
-                np.sum(neighbor_labels == y[:, np.newaxis], axis=1)
-                <= self.br_threshold * neighbor_labels.shape[1]
-            )
+            br_mask = np.zeros(sum(minority_mask), dtype=bool)
 
+            br_mask[
+                np.sum(neighbor_minority_labels == y[minority_mask, np.newaxis], axis=1)
+                <= self.br_threshold * neighbor_minority_labels.shape[1]
+            ] = True
+            
         if save_history_:
             self._save_history_entry("BR", border_mask=br_mask)
         return br_mask
@@ -870,7 +885,9 @@ class InspireClassifier(BaggingClassifier):
         Returns:
             Tuple[np.ndarray, np.ndarray]: The synthetic features and labels generated by SMOTE.
         """
-        return self._smote._fit_resample(X, y, X_to_oversample)  # pylint: disable=protected-access
+        return self._smote._fit_resample(
+            X, y, X_to_oversample
+        )  # pylint: disable=protected-access
 
     def _perform_oversampling(
         self,
@@ -925,14 +942,15 @@ class InspireClassifier(BaggingClassifier):
 
             # calculate regions to oversample
             if self.mask_merging_strategy == MergingStrategy.AND:
-                oversampling_indices = indices[br_mask & bp_mask]
+                oversampling_mask = br_mask & bp_mask
             else:
-                oversampling_indices = indices[br_mask | bp_mask]
+                oversampling_mask = br_mask | bp_mask
 
             # perform oversampling on the identified regions
-            X_to_oversample = X[oversampling_indices]
-            if len(X_to_oversample) > 0:
-                X_synth, y_synth = self._perform_smote(X, y, X_to_oversample)
+            indices_to_oversample = np.flatnonzero(oversampling_mask)
+            
+            if len(indices_to_oversample) > 0:
+                X_synth, y_synth = self._perform_smote(X, y, indices_to_oversample)
             else:
                 logger.info("No regions to oversample found.")
                 X_synth, y_synth = None, None
@@ -940,7 +958,7 @@ class InspireClassifier(BaggingClassifier):
         if save_history_:
             self._save_history_entry(
                 f"Batch__{step}__oversampling",
-                oversampling_indices=oversampling_indices,
+                oversampling_mask=oversampling_mask,
                 X_synth=X_synth,
                 y_synth=y_synth,
                 **bp_history,
