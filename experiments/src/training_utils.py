@@ -13,10 +13,12 @@ from sklearn.metrics import get_scorer
 from sklearn.model_selection import ParameterGrid
 from tqdm import tqdm
 
-from .utils import RANDOM_SEED
+from .utils import RANDOM_SEED, create_logger
 
 warnings.simplefilter("ignore")
 np.random.seed(RANDOM_SEED)
+
+logger = create_logger(__name__)
 
 
 # pylint: disable=invalid-name,too-many-arguments
@@ -295,6 +297,8 @@ class ParamRunner(BaseEstimator):
             List[Dict[str, Any]]: List of evaluation results.
         """
         processes = n_jobs if n_jobs != -1 else os.cpu_count()
+        logger.debug("Using %d processes for parallel evaluation.", processes)
+
         with mp.Pool(processes=processes) as pool:
             func = partial(
                 evaluate_wrapper,
