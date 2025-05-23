@@ -41,6 +41,9 @@ def main():
         # want same splits as in the inspire experiments
         data_manager = BinaryDatasetManager(
             use_additional_datasets=not args.ignore_additional_datasets,
+            only_additional_datasets=args.only_additional_datasets,
+            only_large_datasets=args.only_large_datasets,
+            only_small_datasets=args.only_small_datasets,
             ignore_validation_datasets=True,
         )
 
