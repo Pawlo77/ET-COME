@@ -6,7 +6,7 @@ from functools import partial
 from typing import Any, Dict, Tuple
 
 # from imblearn.over_sampling import ADASYN, SMOTE, SVMSMOTE, BorderlineSMOTE, KMeansSMOTE
-from imblearn.over_sampling import ADASYN, SMOTE, BorderlineSMOTE
+from imblearn.over_sampling import SMOTE
 from sklearn.base import BaseEstimator
 from src.bagging_classifier import BaggingClassifier
 from src.dataset_manager import BinaryDatasetManager
@@ -27,17 +27,17 @@ OVERSAMPLING_CLASSES: Tuple[Tuple[str, Any]] = (
             **OVERSAMPLING_KWARGS,
         ),
     ),
-    (
-        "BorderlineSMOTE",
-        partial(BorderlineSMOTE, **OVERSAMPLING_KWARGS, kind="borderline-1"),
-    ),
-    (
-        "ADASYN",
-        partial(
-            ADASYN,
-            **OVERSAMPLING_KWARGS,
-        ),
-    ),
+    # (
+    #     "BorderlineSMOTE",
+    #     partial(BorderlineSMOTE, **OVERSAMPLING_KWARGS, kind="borderline-1"),
+    # ),
+    # (
+    #     "ADASYN",
+    #     partial(
+    #         ADASYN,
+    #         **OVERSAMPLING_KWARGS,
+    #     ),
+    # ),
     # ("KMeansSMOTE", partial(KMeansSMOTE, **OVERSAMPLING_KWARGS)),
     # ("SVMSMOTE", partial(SVMSMOTE, **OVERSAMPLING_KWARGS)),
 )
