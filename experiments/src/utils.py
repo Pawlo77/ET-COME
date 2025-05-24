@@ -19,7 +19,7 @@ PARAM_GRID: Dict[str, List[Any]] = {
     "max_depth": [5, 10, 15],
     "min_samples_split": [3, 5, 8],
     "min_samples_leaf": [2, 3, 5],
-    "criterion": ["gini", "entropy", "log_loss"],
+    "criterion": ["gini", "entropy"],
     "max_features": [None, "sqrt"],
 }
 
