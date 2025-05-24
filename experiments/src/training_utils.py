@@ -14,6 +14,7 @@ from sklearn.model_selection import ParameterGrid
 from tqdm import tqdm
 
 from .utils import RANDOM_SEED, create_logger
+import time
 
 warnings.simplefilter("ignore")
 np.random.seed(RANDOM_SEED)
@@ -116,6 +117,13 @@ class ParamRunner(BaseEstimator):
 
         self.results_: pd.DataFrame | None = None
         self._scorers: Dict[str, Any] | None = None
+
+        _dummy_iterations = 10**6
+        _dummy_start = time.perf_counter()
+        _dummy_sum = 0
+        for i in range(_dummy_iterations):
+            _dummy_sum += i
+        self._baseline_ops = _dummy_iterations / (time.perf_counter() - _dummy_start)
 
     def fit(
         self,
@@ -232,11 +240,12 @@ class ParamRunner(BaseEstimator):
         if bagging_classifier_class:
             if "n_estimators" not in params:
                 raise ValueError("n_estimators must be in params for bagging.")
-            n_estimators = params.pop("n_estimators")
+            cur_params = params.copy()
+            n_estimators = cur_params.pop("n_estimators")
 
             model = bagging_classifier_class(
                 base_estimator=base_estimator_class(
-                    **params, random_state=random_state
+                    **cur_params, random_state=random_state
                 ),
                 n_estimators=n_estimators,
                 random_state=random_state,
@@ -244,19 +253,30 @@ class ParamRunner(BaseEstimator):
         else:
             model = base_estimator_class(**params, random_state=random_state)
 
+        start_time = time.perf_counter()
         if X_val is not None and y_val is not None:
             model.fit(X_train, y_train, X_val=X_val, y_val=y_val)
         else:
             model.fit(X_train, y_train)
+        elapsed = time.perf_counter() - start_time
 
-        scores: Dict[str, Any] = {"params": params}
+        # Compute an estimated number of baseline operations performed during the fit.
+        estimated_operations = elapsed * ParamRunner._baseline_ops
+
+        scores: Dict[str, Any] = {
+            "params": params,
+            "elapsed": elapsed,
+            "estimated_operations": estimated_operations,
+        }
         for mode, X, y in zip(["train", "test"], [X_train, X_test], [y_train, y_test]):
             mode_scores = {}
             for name, scorer in scorers.items():
                 if name == "roc_auc":
                     if hasattr(model, "predict_proba"):
                         y_proba = model.predict_proba(X)[:, 1]
-                        mode_scores[name] = scorer._score_func(y, y_proba)  # pylint: disable=protected-access
+                        mode_scores[name] = scorer._score_func(
+                            y, y_proba
+                        )  # pylint: disable=protected-access
                     else:
                         mode_scores[name] = None
                 else:

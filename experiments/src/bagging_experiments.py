@@ -5,9 +5,8 @@ from enum import Enum
 from functools import partial
 from typing import Any, Dict, Tuple
 
-from imblearn.over_sampling import ADASYN, SMOTE, BorderlineSMOTE
 
-# from imblearn.over_sampling import ADASYN, SMOTE, SVMSMOTE, BorderlineSMOTE, KMeansSMOTE
+from imblearn.over_sampling import ADASYN, SMOTE, SVMSMOTE, BorderlineSMOTE, KMeansSMOTE
 from sklearn.base import BaseEstimator
 from tqdm import tqdm
 
@@ -39,8 +38,8 @@ OVERSAMPLING_CLASSES: Tuple[Tuple[str, Any]] = (
             **OVERSAMPLING_KWARGS,
         ),
     ),
-    # ("KMeansSMOTE", partial(KMeansSMOTE, **OVERSAMPLING_KWARGS)),
-    # ("SVMSMOTE", partial(SVMSMOTE, **OVERSAMPLING_KWARGS)),
+    ("KMeansSMOTE", partial(KMeansSMOTE, **OVERSAMPLING_KWARGS)),
+    ("SVMSMOTE", partial(SVMSMOTE, **OVERSAMPLING_KWARGS)),
 )
 OVERSAMPLING_NEIGHBORS: Tuple[int] = (3, 5, 7)
 
@@ -150,9 +149,11 @@ def perform_experiment(
                 (X_val, y_val),
                 (X_test, y_test),
             ) in data_manager.serve(
-                oversampler=oversampler_class()
-                if oversampling_option == OversamplingOptions.BASIC
-                else None,
+                oversampler=(
+                    oversampler_class()
+                    if oversampling_option == OversamplingOptions.BASIC
+                    else None
+                ),
             ):
                 for take in range(1, n_takes + 1):
                     i += 1
