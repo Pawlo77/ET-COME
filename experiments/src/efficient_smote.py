@@ -8,10 +8,11 @@ from typing import Any, Callable, Tuple, Union
 
 import numpy as np
 from scipy import sparse
-from utils import RANDOM_SEED
+
+from .utils import RANDOM_SEED
 
 
-# pylint: disable=too-many-ancestors
+# pylint: disable=too-many-ancestors,too-few-public-methods
 class EfficientSMOTE:
     """
     An enhanced version of SMOTE that leverages a custom KNN callable for neighbor queries.
@@ -38,7 +39,7 @@ class EfficientSMOTE:
         self._k_neighbors = k_neighbors
         self._minority_class = minority_class
 
-    # pylint: disable=arguments-differ,invalid-name
+    # pylint: disable=invalid-name,too-many-locals
     def _fit_resample(
         self, X: np.ndarray, y: np.ndarray, indices_to_oversample: np.ndarray
     ) -> Tuple[Union[np.ndarray, sparse.spmatrix], np.ndarray]:
@@ -64,9 +65,9 @@ class EfficientSMOTE:
         np.random.seed(RANDOM_SEED)
 
         # Get neighbors for samples to oversample.
-        nns = self._knn(
-            indices_to_oversample, return_distances_=False
-        )[:, : self._k_neighbors]
+        nns = self._knn(indices_to_oversample, return_distances_=False)[
+            :, : self._k_neighbors
+        ]
 
         # Calculate oversampling per sample.
         oversampling_per_index = self._oversampling_per_step // len(
@@ -105,7 +106,7 @@ class EfficientSMOTE:
                 new_sample = sample + step * (neighbor - sample)
                 X_new.append(new_sample)
                 y_new.append(self._minority_class)
-        
+
         if X_new:
             X_resampled = np.vstack([X_resampled, np.array(X_new)])
             y_resampled = np.hstack([y_resampled, np.array(y_new)])
