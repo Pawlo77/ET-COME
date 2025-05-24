@@ -5,16 +5,17 @@ from enum import Enum
 from functools import partial
 from typing import Any, Dict, Tuple
 
+from imblearn.over_sampling import ADASYN, SMOTE, BorderlineSMOTE
+
 # from imblearn.over_sampling import ADASYN, SMOTE, SVMSMOTE, BorderlineSMOTE, KMeansSMOTE
-from imblearn.over_sampling import SMOTE
 from sklearn.base import BaseEstimator
-from src.bagging_classifier import BaggingClassifier
-from src.dataset_manager import BinaryDatasetManager
-from src.training_utils import ParamRunner
-from src.utils import RANDOM_SEED, RESULTS_DIR
 from tqdm import tqdm
 
+from .bagging_classifier import BaggingClassifier
+from .dataset_manager import BinaryDatasetManager
 from .experiments_utils import SCORING, get_performed_runs
+from .training_utils import ParamRunner
+from .utils import RANDOM_SEED, RESULTS_DIR
 
 OVERSAMPLING_KWARGS: Dict[str, Any] = {
     "sampling_strategy": "minority",
@@ -27,17 +28,17 @@ OVERSAMPLING_CLASSES: Tuple[Tuple[str, Any]] = (
             **OVERSAMPLING_KWARGS,
         ),
     ),
-    # (
-    #     "BorderlineSMOTE",
-    #     partial(BorderlineSMOTE, **OVERSAMPLING_KWARGS, kind="borderline-1"),
-    # ),
-    # (
-    #     "ADASYN",
-    #     partial(
-    #         ADASYN,
-    #         **OVERSAMPLING_KWARGS,
-    #     ),
-    # ),
+    (
+        "BorderlineSMOTE",
+        partial(BorderlineSMOTE, **OVERSAMPLING_KWARGS, kind="borderline-1"),
+    ),
+    (
+        "ADASYN",
+        partial(
+            ADASYN,
+            **OVERSAMPLING_KWARGS,
+        ),
+    ),
     # ("KMeansSMOTE", partial(KMeansSMOTE, **OVERSAMPLING_KWARGS)),
     # ("SVMSMOTE", partial(SVMSMOTE, **OVERSAMPLING_KWARGS)),
 )

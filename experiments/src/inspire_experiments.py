@@ -3,16 +3,15 @@
 import os
 from functools import partial
 
-# from imblearn.over_sampling import ADASYN, SMOTE, SVMSMOTE, BorderlineSMOTE, KMeansSMOTE
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import ParameterGrid
 from sklearn.tree import DecisionTreeClassifier
-from src.dataset_manager import BinaryDatasetManager
-from src.training_utils import ParamRunner
-from src.utils import RANDOM_SEED, RESULTS_DIR
 from tqdm import tqdm
 
+from .dataset_manager import BinaryDatasetManager
 from .experiments_utils import SCORING, get_performed_runs
+from .training_utils import ParamRunner
+from .utils import RANDOM_SEED, RESULTS_DIR
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
