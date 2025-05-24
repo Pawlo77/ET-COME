@@ -6,7 +6,8 @@ from functools import partial
 from typing import Any, Dict, Tuple
 
 
-from imblearn.over_sampling import ADASYN, SMOTE, SVMSMOTE, BorderlineSMOTE, KMeansSMOTE
+from imblearn.over_sampling import ADASYN, SMOTE, BorderlineSMOTE
+# from imblearn.over_sampling import ADASYN, SMOTE, SVMSMOTE, BorderlineSMOTE, KMeansSMOTE
 from sklearn.base import BaseEstimator
 from tqdm import tqdm
 
@@ -38,8 +39,8 @@ OVERSAMPLING_CLASSES: Tuple[Tuple[str, Any]] = (
             **OVERSAMPLING_KWARGS,
         ),
     ),
-    ("KMeansSMOTE", partial(KMeansSMOTE, **OVERSAMPLING_KWARGS)),
-    ("SVMSMOTE", partial(SVMSMOTE, **OVERSAMPLING_KWARGS)),
+    # ("KMeansSMOTE", partial(KMeansSMOTE, **OVERSAMPLING_KWARGS)),
+    # ("SVMSMOTE", partial(SVMSMOTE, **OVERSAMPLING_KWARGS)),
 )
 OVERSAMPLING_NEIGHBORS: Tuple[int] = (3, 5, 7)
 

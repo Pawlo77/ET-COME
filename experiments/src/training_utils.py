@@ -75,6 +75,17 @@ class ParamRunner(BaseEstimator):
     """
     A parameter runner class for model evaluation over a grid of parameters.
     """
+    
+    @staticmethod
+    def _compute_baseline_ops() -> float:
+        dummy_iterations = 10**6
+        dummy_start = time.perf_counter()
+        dummy_sum = 0
+        for i in range(dummy_iterations):
+            dummy_sum += i
+        return dummy_iterations / (time.perf_counter() - dummy_start)
+
+    _baseline_ops = _compute_baseline_ops()
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
@@ -117,13 +128,6 @@ class ParamRunner(BaseEstimator):
 
         self.results_: pd.DataFrame | None = None
         self._scorers: Dict[str, Any] | None = None
-
-        _dummy_iterations = 10**6
-        _dummy_start = time.perf_counter()
-        _dummy_sum = 0
-        for i in range(_dummy_iterations):
-            _dummy_sum += i
-        self._baseline_ops = _dummy_iterations / (time.perf_counter() - _dummy_start)
 
     def fit(
         self,
