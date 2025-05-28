@@ -24,32 +24,6 @@ def main():
     group.add_argument(
         "--advanced", action="store_true", help="Use the ADVANCED oversampling option."
     )
-<<<<<<< HEAD
-    parser.add_argument(
-        "--start",
-        type=int,
-        default=None,
-        help="Start index for the experiment (optional).",
-    )
-    parser.add_argument(
-        "--end", type=int, default=None, help="End index for the experiment (optional)."
-    )
-    parser.add_argument(
-        "--n-jobs", type=int, default=-1, help="Number of jobs (optional)."
-    )
-    parser.add_argument(
-        "--experiment-name",
-        type=str,
-        help="Name of the experiment.",
-        default="0",
-    )
-    parser.add_argument(
-        "--ignore-additional-datasets",
-        action="store_true",
-        help="Weather to use additional dataasets.",
-    )
-=======
->>>>>>> c80e02bbb06c4b6783fef3ea1b792ce1ec503294
     args = parser.parse_args()
 
     from src.bagging_experiments import OversamplingOptions, perform_experiment
@@ -84,13 +58,9 @@ def main():
             param_grid=PARAM_GRID,
             data_manager=data_manager,
             oversampling_option=oversampling_option,
-<<<<<<< HEAD
-            n_jobs=args.n_jobs
-=======
             n_takes=args.n_takes,
             n_jobs=args.n_jobs,
             verbose=args.verbose,
->>>>>>> c80e02bbb06c4b6783fef3ea1b792ce1ec503294
         )
 
 
