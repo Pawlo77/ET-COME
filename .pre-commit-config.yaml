@@ -65,10 +65,17 @@ repos:
           - --max-line-length=100
         additional_dependencies:
           - pandas-stubs
-          - kagglehub
-          - ucimlrepo
-          - imblearn
           - IPython
+          - hnswlib
+          - imbalanced_learn
+          - imblearn
+          - kagglehub
+          - numpy
+          - pandas
+          - scikit_learn
+          - scipy
+          - tqdm
+          - ucimlrepo
 
   # python code security checks
   - repo: https://github.com/PyCQA/bandit

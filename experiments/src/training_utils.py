@@ -13,10 +13,13 @@ from sklearn.metrics import get_scorer
 from sklearn.model_selection import ParameterGrid
 from tqdm import tqdm
 
-from .utils import RANDOM_SEED
+from .utils import RANDOM_SEED, create_logger
+import time
 
 warnings.simplefilter("ignore")
 np.random.seed(RANDOM_SEED)
+
+logger = create_logger(__name__)
 
 
 # pylint: disable=invalid-name,too-many-arguments
@@ -72,13 +75,25 @@ class ParamRunner(BaseEstimator):
     """
     A parameter runner class for model evaluation over a grid of parameters.
     """
+    
+    @staticmethod
+    def _compute_baseline_ops() -> float:
+        dummy_iterations = 10**6
+        dummy_start = time.perf_counter()
+        dummy_sum = 0
+        for i in range(dummy_iterations):
+            dummy_sum += i
+        return dummy_iterations / (time.perf_counter() - dummy_start)
+
+    _baseline_ops = _compute_baseline_ops()
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         base_estimator_class: Callable[..., BaseEstimator],
-        param_grid: Dict[str, Any],
         scoring: Dict[str, str],
+        param_grid: Dict[str, Any] | None = None,
+        param_list: List[Dict[str, Any]] | None = None,
         random_state: int = RANDOM_SEED,
         bagging_classifier_class: Callable[..., BaseEstimator] | None = None,
         n_jobs: int = 1,
@@ -88,17 +103,24 @@ class ParamRunner(BaseEstimator):
 
         Args:
             base_estimator_class (Callable[..., BaseEstimator]): Class of the base estimator.
-            param_grid (Dict[str, Any]): Dictionary representing the parameter grid.
             scoring (Dict[str, str]): Dictionary of scoring metrics.
+            param_grid (Dict[str, Any] | None): Dictionary representing the parameter grid.
+            param_list (List[Dict[str, Any]] | None): List of parameter combinations.
             random_state (int, optional): Random seed for reproducibility.
             bagging_classifier_class (Callable[..., BaseEstimator] | None): Class of the
                 bagging classifier to instantiate.
             n_jobs (int, optional): Number of jobs for parallel processing. Defaults to 1.
         """
+        if (param_grid is None and param_list is None) or (
+            param_grid is not None and param_list is not None
+        ):
+            raise RuntimeError("Either param_grid or param_list must be provided.")
+
         self.base_estimator_class = base_estimator_class
         self.bagging_classifier_class = bagging_classifier_class
 
         self.param_grid = param_grid
+        self.param_list = param_list
         self.scoring = scoring
 
         self.n_jobs = n_jobs
@@ -134,7 +156,9 @@ class ParamRunner(BaseEstimator):
         self._scorers: Dict[str, Any] = {
             name: get_scorer(metric) for name, metric in self.scoring.items()
         }
-        param_list: List[Dict[str, Any]] = list(ParameterGrid(self.param_grid))
+        param_list: List[Dict[str, Any]] = self.param_list or list(
+            ParameterGrid(self.param_grid)
+        )
 
         # multiprocessing
         if self.n_jobs > 1 or self.n_jobs == -1:
@@ -188,7 +212,7 @@ class ParamRunner(BaseEstimator):
         y_test: np.ndarray,
         base_estimator_class: Callable[..., BaseEstimator],
         scorers: Dict[str, Any],
-        bagging_classifier_class: Callable[..., BaseEstimator],
+        bagging_classifier_class: Callable[..., BaseEstimator] | None = None,
         X_val: np.ndarray | None = None,
         y_val: np.ndarray | None = None,
         random_state: int = RANDOM_SEED,
@@ -206,7 +230,7 @@ class ParamRunner(BaseEstimator):
                 Class of the base estimator.
             scorers (Dict[str, Any]): Dictionary of scorer functions.
             random_state (int): Random seed for reproducibility.
-            bagging_classifier_class (Callable[..., BaseEstimator]):
+            bagging_classifier_class (Callable[..., BaseEstimator] | None):
                 Class of the bagging classifier to instantiate.
             X_val (np.ndarray | None): Validation features.
             y_val (np.ndarray | None): Validation targets.
@@ -217,30 +241,46 @@ class ParamRunner(BaseEstimator):
             ValueError: If n_estimators is not in params for bagging.
         """
         # Instantiate model with or without bagging.
-        if "n_estimators" not in params:
-            raise ValueError("n_estimators must be in params for bagging.")
-        if bagging_classifier_class is None:
-            raise ValueError("bagging_classifier_class must be provided for bagging.")
-        n_estimators = params.pop("n_estimators")
-        model = bagging_classifier_class(
-            base_estimator=base_estimator_class(**params, random_state=random_state),
-            n_estimators=n_estimators,
-            random_state=random_state,
-        )
+        if bagging_classifier_class:
+            if "n_estimators" not in params:
+                raise ValueError("n_estimators must be in params for bagging.")
+            cur_params = params.copy()
+            n_estimators = cur_params.pop("n_estimators")
 
+            model = bagging_classifier_class(
+                base_estimator=base_estimator_class(
+                    **cur_params, random_state=random_state
+                ),
+                n_estimators=n_estimators,
+                random_state=random_state,
+            )
+        else:
+            model = base_estimator_class(**params, random_state=random_state)
+
+        start_time = time.perf_counter()
         if X_val is not None and y_val is not None:
             model.fit(X_train, y_train, X_val=X_val, y_val=y_val)
         else:
             model.fit(X_train, y_train)
+        elapsed = time.perf_counter() - start_time
 
-        scores: Dict[str, Any] = {"params": params}
+        # Compute an estimated number of baseline operations performed during the fit.
+        estimated_operations = elapsed * ParamRunner._baseline_ops
+
+        scores: Dict[str, Any] = {
+            "params": params,
+            "elapsed": elapsed,
+            "estimated_operations": estimated_operations,
+        }
         for mode, X, y in zip(["train", "test"], [X_train, X_test], [y_train, y_test]):
             mode_scores = {}
             for name, scorer in scorers.items():
                 if name == "roc_auc":
                     if hasattr(model, "predict_proba"):
                         y_proba = model.predict_proba(X)[:, 1]
-                        mode_scores[name] = scorer._score_func(y, y_proba)  # pylint: disable=protected-access
+                        mode_scores[name] = scorer._score_func(
+                            y, y_proba
+                        )  # pylint: disable=protected-access
                     else:
                         mode_scores[name] = None
                 else:
@@ -281,6 +321,8 @@ class ParamRunner(BaseEstimator):
             List[Dict[str, Any]]: List of evaluation results.
         """
         processes = n_jobs if n_jobs != -1 else os.cpu_count()
+        logger.debug("Using %d processes for parallel evaluation.", processes)
+
         with mp.Pool(processes=processes) as pool:
             func = partial(
                 evaluate_wrapper,

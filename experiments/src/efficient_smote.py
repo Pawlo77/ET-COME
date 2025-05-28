@@ -7,69 +7,108 @@ a custom KNN callable for neighbor queries.
 from typing import Any, Callable, Tuple, Union
 
 import numpy as np
-from imblearn.over_sampling import SMOTE
 from scipy import sparse
 
+from .utils import RANDOM_SEED
 
-# pylint: disable=too-many-ancestors
-class EfficientSMOTE(SMOTE):
+
+# pylint: disable=too-many-ancestors,too-few-public-methods
+class EfficientSMOTE:
     """
     An enhanced version of SMOTE that leverages a custom KNN callable for neighbor queries.
     """
 
     def __init__(
-        self, knn_callable: Callable[..., Any], *args: Any, **kwargs: Any
+        self,
+        knn_callable: Callable[..., Any],
+        oversampling_per_step: int,
+        k_neighbors: int,
+        minority_class: int,
     ) -> None:
         """
         Initializes the EfficientSMOTE instance.
 
         Args:
-            knn_callable (Callable): A callable that performs KNN queries.
-            *args: Additional positional arguments to pass to the SMOTE base class.
-            **kwargs: Additional keyword arguments to pass to the SMOTE base class.
+            knn_callable (Callable): A callable for performing KNN neighbor queries.
+            oversampling_per_step (int): Number of synthetic samples to generate per step.
+            k_neighbors (int): Number of neighbors to use for SMOTE.
+            minority_class: Minority class to oversample.
         """
-        super().__init__(*args, **kwargs)
         self._knn: Callable[..., Any] = knn_callable
+        self._oversampling_per_step = oversampling_per_step
+        self._k_neighbors = k_neighbors
+        self._minority_class = minority_class
 
-    # pylint: disable=arguments-differ,invalid-name
+    # pylint: disable=invalid-name,too-many-locals
     def _fit_resample(
-        self, X: np.ndarray, y: np.ndarray, X_to_oversample: np.ndarray
+        self, X: np.ndarray, y: np.ndarray, indices_to_oversample: np.ndarray
     ) -> Tuple[Union[np.ndarray, sparse.spmatrix], np.ndarray]:
         """
         Resamples the dataset using SMOTE with a custom KNN
         query for synthetic sample generation.
 
         Args:
-            X (np.ndarray): Original feature data.
-            y (np.ndarray): Original class labels.
-            X_to_oversample (np.ndarray): Samples to be oversampled.
+            X (np.ndarray): Feature data.
+            y (np.ndarray): Class labels.
+            indices_to_oversample (np.ndarray): Indices of samples to be oversampled.
 
         Returns:
             Tuple[Union[np.ndarray, sparse.spmatrix], np.ndarray]: The
                 resampled features and labels.
         """
-        X_resampled = []
-        y_resampled = []
+        X_resampled = X.copy()
+        y_resampled = y.copy()
 
-        for class_sample, n_samples in self.sampling_strategy.items():
-            if n_samples == 0:
-                continue
+        X_new = []
+        y_new = []
 
-            indices = np.flatnonzero(y == class_sample)
-            X_class = X_to_oversample[indices]
-            nns = self._knn(indices, k=self.k_neighbors, return_distances_=False)
+        np.random.seed(RANDOM_SEED)
 
-            X_new, y_new = self._make_samples(
-                X_class,
-                y.dtype,
-                class_sample,
-                X,
-                nns,
-                n_samples,
-                1.0,
+        # Get neighbors for samples to oversample.
+        nns = self._knn(indices_to_oversample, return_distances_=False)[
+            :, : self._k_neighbors
+        ]
+
+        # Calculate oversampling per sample.
+        oversampling_per_index = self._oversampling_per_step // len(
+            indices_to_oversample
+        )
+        left_overs = self._oversampling_per_step - oversampling_per_index * len(
+            indices_to_oversample
+        )
+
+        for i, index in enumerate(indices_to_oversample):
+            neighbors = nns[i]
+            sample = X[index]
+
+            # Choose neighbors for oversampling_per_index
+            seed_indices = np.random.choice(neighbors, oversampling_per_index)
+            seed_neighbors = X[seed_indices]
+
+            for neighbor in seed_neighbors:
+                step = np.random.uniform()
+                new_sample = sample + step * (neighbor - sample)
+                X_new.append(new_sample)
+                y_new.append(self._minority_class)
+
+        # Handle left_overs.
+        if left_overs > 0:
+            chosen_indices = np.random.choice(
+                len(indices_to_oversample), left_overs, replace=False
             )
+            for idx in chosen_indices:
+                index = indices_to_oversample[idx]
+                neighbors = nns[idx]
+                sample = X[index]
+                neighbor_idx = np.random.choice(neighbors)
+                neighbor = X[neighbor_idx]
+                step = np.random.uniform()
+                new_sample = sample + step * (neighbor - sample)
+                X_new.append(new_sample)
+                y_new.append(self._minority_class)
 
-            X_resampled.append(X_new)
-            y_resampled.append(y_new)
+        if X_new:
+            X_resampled = np.vstack([X_resampled, np.array(X_new)])
+            y_resampled = np.hstack([y_resampled, np.array(y_new)])
 
-        return np.vstack(X_resampled), np.hstack(y_resampled)
+        return X_resampled, y_resampled
