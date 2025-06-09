@@ -78,6 +78,85 @@ def create_results_bar_plot(
     ax.set_ylabel(y_label)
 
 
+# pylint: disable=too-many-locals
+def create_results_point_plot(
+    df: pd.DataFrame,
+    method: str,
+    n_val: int,
+    ax: plt.Axes,
+    pallette: dict,
+    plot_legend: bool = False,
+    target_x: str = "inbalance strength",
+    target_y: str = "mean",
+    x_label: str = "Inbalance Strength",
+    y_label: str = "Mean F1 Score",
+    bbox_right: float = 1.01,
+    scale: float = 1.1,
+    errwidth: float = 1.5,
+    alpha: float = 0.8,
+    capsize: float = 0.05,
+) -> None:
+    """
+    Create a point plot for the given method and number of neighbors.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing the results.
+        method (str): Name of the oversampling method.
+        n_val (int): Number of neighbors.
+        ax (plt.Axes): Matplotlib Axes object to plot on.
+        pallette (dict): Color palette for the plot.
+        plot_legend (bool, optional): Whether to plot the legend. Defaults to False.
+        target_x (str, optional): Column name for the x-axis. Defaults to "inbalance strength".
+        target_y (str, optional): Column name for the y-axis. Defaults to "mean".
+        x_label (str, optional): Label for the x-axis. Defaults to "Inbalance Strength".
+        y_label (str, optional): Label for the y-axis. Defaults to "Mean F1 Score".
+        bbox_right (float, optional): Right bounding box for the legend. Defaults to 1.01.
+        scale (float, optional): Scale factor for the markers. Defaults to 1.1.
+        errwidth (float, optional): Width of the error bars. Defaults to 1.5.
+        alpha (float, optional): Transparency level for the markers. Defaults to 0.8.
+        capsize (float, optional): Size of the caps on the error bars. Defaults to 0.05.
+    """
+
+    sns.pointplot(
+        data=df,
+        x=target_x,
+        y=target_y,
+        hue="oversampling_option",
+        join=False,
+        markers=["o", "s"],
+        capsize=capsize,
+        ax=ax,
+        scale=scale,
+        errwidth=errwidth,
+        alpha=alpha,
+    )
+
+    grid_color = tuple(list(pallette.values())[0])
+    ax.grid(True, linestyle="--", linewidth=0.5, color=grid_color)
+    ax.set_title(f"{method} (n = {n_val})", fontsize=14, pad=10)
+    ax.set_xlabel(x_label, fontsize=12)
+    ax.set_ylabel(y_label, fontsize=12)
+    ax.tick_params(axis="x", rotation=45, labelsize=10)
+    ax.tick_params(axis="y", labelsize=10)
+    ax.grid(True, linestyle="--", linewidth=0.5)
+
+    if not plot_legend:
+        ax.get_legend().remove()
+    else:
+        handles, labels = ax.get_legend_handles_labels()
+        labels, handles = zip(*sorted(zip(labels, handles), key=lambda t: t[0]))
+        ax.legend(
+            title="Oversampling Option",
+            title_fontsize=12,
+            bbox_to_anchor=(bbox_right, 1),
+            loc="upper left",
+            ncol=1,
+            handles=handles,
+            labels=labels,
+            fontsize=10,
+        )
+
+
 def save_plot(filename: str, dpi: int = 300, bbox_inches: str = "tight") -> None:
     """
     Save the plot to a file.
