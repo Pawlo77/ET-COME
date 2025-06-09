@@ -27,6 +27,24 @@ This repository hosts supplementary material related to the INSPIRE paper. It pr
     Includes the INSPIRE paper in PDF format.
 
 
+# How to run our experiments
+
+```bash
+# advanced_additional_datasets_small
+python bagging_smote.py --experiment-name advanced_additional_datasets_small --only-small-datasets --only-additional-datasets --verbose --n-takes 5 --advanced
+
+# advanced_ignore_additional_datasets_small
+# here 295-301 are skipped due to data error
+python bagging_smote.py --experiment-name advanced_ignore_additional_datasets_small --only-small-datasets --ignore-additional-datasets --verbose --n-takes 5 --advanced
+
+# base_additional_datasets_small
+python bagging_smote.py --experiment-name base_additional_datasets_small --only-small-datasets --only-additional-datasets --verbose --n-takes 5 --base
+
+# base_ignore_additional_datasets_small
+python bagging_smote.py --experiment-name base_ignore_additional_datasets_small --only-small-datasets --ignore-additional-datasets --verbose --n-takes 5 --base
+```
+
+
 ## License
 
 This project is provided for research purposes. Refer to the repository's license file for more details.

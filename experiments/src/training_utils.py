@@ -2,6 +2,7 @@
 
 import multiprocessing as mp
 import os
+import time
 import warnings
 from functools import partial
 from typing import Any, Callable, Dict, List, Tuple
@@ -14,7 +15,6 @@ from sklearn.model_selection import ParameterGrid
 from tqdm import tqdm
 
 from .utils import RANDOM_SEED, create_logger
-import time
 
 warnings.simplefilter("ignore")
 np.random.seed(RANDOM_SEED)
@@ -75,7 +75,7 @@ class ParamRunner(BaseEstimator):
     """
     A parameter runner class for model evaluation over a grid of parameters.
     """
-    
+
     @staticmethod
     def _compute_baseline_ops() -> float:
         dummy_iterations = 10**6
@@ -278,9 +278,7 @@ class ParamRunner(BaseEstimator):
                 if name == "roc_auc":
                     if hasattr(model, "predict_proba"):
                         y_proba = model.predict_proba(X)[:, 1]
-                        mode_scores[name] = scorer._score_func(
-                            y, y_proba
-                        )  # pylint: disable=protected-access
+                        mode_scores[name] = scorer._score_func(y, y_proba)  # pylint: disable=protected-access
                     else:
                         mode_scores[name] = None
                 else:

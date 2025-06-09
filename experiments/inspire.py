@@ -9,7 +9,7 @@ from src.inspire import MergingStrategy
 from src.utils import PARAM_GRID as TREE_PARAM_GRID
 from src.utils import TimedLogger, create_logger, get_parser
 
-# TODO: define the search space for the inspire
+# TODO: define the search space for the inspire # pylint: disable=fixme
 PARAM_GRID: Dict[str, List[Any]] = {
     "n_estimators": [100, 500],
     "enn_neighbors": [],

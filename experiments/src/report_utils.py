@@ -42,7 +42,7 @@ def read_results(run_id: int = 0, results_dir: str = RESULTS_DIR) -> pd.DataFram
                     )
 
             for param in ["max_depth", "n_estimators"]:
-                cur_df[param] = cur_df["params"].apply(lambda x: x.get(param, "None"))
+                cur_df[param] = cur_df["params"].apply(lambda x: x.get(param, "None"))  # pylint: disable=cell-var-from-loop
 
             cur_df = cur_df.drop(columns=["train", "test", "params"])
 
