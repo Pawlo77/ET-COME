@@ -76,6 +76,8 @@ repos:
           - scipy
           - tqdm
           - ucimlrepo
+          - matplotlib
+          - seaborn
 
   # python code security checks
   - repo: https://github.com/PyCQA/bandit
