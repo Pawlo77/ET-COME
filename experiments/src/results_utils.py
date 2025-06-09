@@ -66,7 +66,11 @@ def create_results_df() -> pd.DataFrame:
         ignore_index=True,
     )
 
+    original_rows = tmp_df.shape[0]
     tmp_df = tmp_df.dropna(subset=["test"]).reset_index(drop=True)
+    print(
+        f"Filtered out {original_rows - tmp_df.shape[0]} rows with missing test results."
+    )
 
     test = pd.DataFrame(tmp_df["test"].values.tolist())
     results_df = pd.concat([tmp_df, test], axis=1)
