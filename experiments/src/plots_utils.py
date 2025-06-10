@@ -90,6 +90,7 @@ def create_results_point_plot(
     target_y: str = "mean",
     x_label: str = "Inbalance Strength",
     y_label: str = "Mean F1 Score",
+    x_discrete: bool = False,
     bbox_right: float = 1.01,
     scale: float = 1.1,
     errwidth: float = 1.5,
@@ -110,6 +111,7 @@ def create_results_point_plot(
         target_y (str, optional): Column name for the y-axis. Defaults to "mean".
         x_label (str, optional): Label for the x-axis. Defaults to "Inbalance Strength".
         y_label (str, optional): Label for the y-axis. Defaults to "Mean F1 Score".
+        x_discrete (bool, optional): Whether the x-axis should be discrete. Defaults to False.
         bbox_right (float, optional): Right bounding box for the legend. Defaults to 1.01.
         scale (float, optional): Scale factor for the markers. Defaults to 1.1.
         errwidth (float, optional): Width of the error bars. Defaults to 1.5.
@@ -117,19 +119,34 @@ def create_results_point_plot(
         capsize (float, optional): Size of the caps on the error bars. Defaults to 0.05.
     """
 
-    sns.pointplot(
-        data=df,
-        x=target_x,
-        y=target_y,
-        hue="oversampling_option",
-        join=False,
-        markers=["o", "s"],
-        capsize=capsize,
-        ax=ax,
-        scale=scale,
-        errwidth=errwidth,
-        alpha=alpha,
-    )
+    if x_discrete:
+        sns.pointplot(
+            data=df,
+            x=target_x,
+            y=target_y,
+            hue="oversampling_option",
+            join=False,
+            markers=["o", "s"],
+            capsize=capsize,
+            ax=ax,
+            scale=scale,
+            errwidth=errwidth,
+            alpha=alpha,
+        )
+    else:
+        sns.lineplot(
+            data=df,
+            x=target_x,
+            y=target_y,
+            hue="oversampling_option",
+            style="oversampling_option",
+            markers=True,
+            linestyle='None',
+            ax=ax,
+            alpha=alpha,
+            err_style="bars",
+            err_kws={"capsize": capsize, "elinewidth": errwidth},
+        )
 
     grid_color = tuple(list(pallette.values())[0])
     ax.grid(True, linestyle="--", linewidth=0.5, color=grid_color)
@@ -139,6 +156,8 @@ def create_results_point_plot(
     ax.tick_params(axis="x", rotation=45, labelsize=10)
     ax.tick_params(axis="y", labelsize=10)
     ax.grid(True, linestyle="--", linewidth=0.5)
+    if not x_discrete:
+        ax.set_xscale('linear')
 
     if not plot_legend:
         ax.get_legend().remove()
