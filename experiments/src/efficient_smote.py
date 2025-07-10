@@ -53,11 +53,8 @@ class EfficientSMOTE:
             indices_to_oversample (np.ndarray): Indices of samples to be oversampled.
 
         Returns:
-            Tuple[Union[np.ndarray, sparse.spmatrix], np.ndarray]: The
-                resampled features and labels.
+            TODO
         """
-        X_resampled = X.copy()
-        y_resampled = y.copy()
 
         X_new = []
         y_new = []
@@ -107,8 +104,4 @@ class EfficientSMOTE:
                 X_new.append(new_sample)
                 y_new.append(self._minority_class)
 
-        if X_new:
-            X_resampled = np.vstack([X_resampled, np.array(X_new)])
-            y_resampled = np.hstack([y_resampled, np.array(y_new)])
-
-        return X_resampled, y_resampled
+        return np.array(X_new), np.array(y_new)

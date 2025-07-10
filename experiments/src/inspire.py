@@ -68,7 +68,7 @@ class InspireClassifier(BaggingClassifier):
         minority_class: Any | None = None,
         #
         enn_neighbors: int = 7,
-        enn_min_matching_neighbors: int = 3,
+        enn_min_matching_neighbors: int = None,
         oversampling_neighbors: int = 10,
         val_to_train_neighbors: int = 3,
         knn_kw: dict = {},
@@ -191,7 +191,10 @@ class InspireClassifier(BaggingClassifier):
         self.minority_class = minority_class
 
         self.enn_neighbors = enn_neighbors  # data cleaning
-        self.enn_min_matching_neighbors = enn_min_matching_neighbors  # data cleaning
+        if enn_min_matching_neighbors is None:
+            self.enn_min_matching_neighbors = enn_neighbors // 3
+        else: 
+            self.enn_min_matching_neighbors = enn_min_matching_neighbors # data cleaning
         self.oversampling_neighbors = oversampling_neighbors  # oversampling
         self.val_to_train_neighbors = (
             val_to_train_neighbors  # translation between X_val and X

@@ -9,18 +9,16 @@ from src.inspire import MergingStrategy
 from src.utils import PARAM_GRID as TREE_PARAM_GRID
 from src.utils import TimedLogger, create_logger, get_parser
 
-# TODO: define the search space for the inspire # pylint: disable=fixme
 PARAM_GRID: Dict[str, List[Any]] = {
     "n_estimators": [100, 500],
-    "enn_neighbors": [],
-    "enn_min_matching_neighbors": [],
-    "oversampling_neighbors": [],
-    "val_to_train_neighbors": [],
-    "step_size": [],
-    "oversampling_ratio": [],
+    "enn_neighbors": [3, 5, 7],
+    "oversampling_neighbors": [3, 5, 7],
+    "val_to_train_neighbors": [3, 5, 7],
+    "step_size": [2, 5, 10],
+    "oversampling_ratio": [0.2, 0.5, 1.0],
     "adaptive_oversampling_step": [True, False],
-    "br_threshold": [],
-    "bp_theta": [],
+    "br_threshold": [0.1, 0.2, 0.3],
+    "bp_theta": [0.5, 0.7, 0.9],
     "mask_merging_strategy": [MergingStrategy.AND, MergingStrategy.OR],
     "remove_outliers_": [True, False],
 }
