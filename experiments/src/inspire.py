@@ -161,6 +161,10 @@ class InspireClassifier(BaggingClassifier):
             )
         if "k" in knn_kw:  # pylint: disable=magic-value-comparison
             raise ValueError("'k' is not allowed in knn_kw and bp_kwargs.")
+        
+        if enn_min_matching_neighbors is None:
+            enn_min_matching_neighbors = enn_neighbors // 3
+        
         if (
             enn_neighbors <= 0
             or enn_min_matching_neighbors <= 0
@@ -191,10 +195,7 @@ class InspireClassifier(BaggingClassifier):
         self.minority_class = minority_class
 
         self.enn_neighbors = enn_neighbors  # data cleaning
-        if enn_min_matching_neighbors is None:
-            self.enn_min_matching_neighbors = enn_neighbors // 3
-        else: 
-            self.enn_min_matching_neighbors = enn_min_matching_neighbors # data cleaning
+        self.enn_min_matching_neighbors = enn_min_matching_neighbors  # data cleaning
         self.oversampling_neighbors = oversampling_neighbors  # oversampling
         self.val_to_train_neighbors = (
             val_to_train_neighbors  # translation between X_val and X
