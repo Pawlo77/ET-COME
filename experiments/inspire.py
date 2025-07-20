@@ -11,14 +11,14 @@ from src.utils import TimedLogger, create_logger, get_parser
 
 PARAM_GRID: Dict[str, List[Any]] = {
 #     "enn_neighbors": [3, 5, 7],
-#     "val_to_train_neighbors": [3, 5, 7],
 #     "adaptive_oversampling_step": [True, False],
 #     "br_threshold": [0.1, 0.2, 0.3],
 #     "bp_theta": [0.5, 0.7, 0.9],
 #     "mask_merging_strategy": [MergingStrategy.AND, MergingStrategy.OR],
     "n_estimators": [100, 500],
     "oversampling_ratio": [0.8, 1.0],
-    "oversampling_neighbors": [3, 5],
+    "oversampling_neighbors": [3, 5, 7],
+    "val_to_train_neighbors": [3, 5, 7],
     "step_size": [2, 5],
     "remove_outliers_": [True, False],
 }

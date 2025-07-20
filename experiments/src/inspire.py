@@ -76,7 +76,6 @@ class InspireClassifier(BaggingClassifier):
         duplicate_out_of_cache_entries_: bool = True,
         #
         step_size: int = 2,
-        cache_size: int | None = None,
         #
         oversampling_per_step: int | None = None,
         oversampling_ratio: float | None = 0.3,
@@ -117,9 +116,6 @@ class InspireClassifier(BaggingClassifier):
                 If False, raises an error if cache is not large enough.
 
             step_size (int): Number of models to train in each step.
-            cache_size (int | None): Size of the KNN cache. If not provided,
-                it will be set to the maximum of enn_neighbors and
-                oversampling_neighbors.
 
             oversampling_per_step (int | None): Number of samples to oversample in each step.
             oversampling_ratio (float | None): Ratio of samples to oversample
@@ -161,10 +157,10 @@ class InspireClassifier(BaggingClassifier):
             )
         if "k" in knn_kw:  # pylint: disable=magic-value-comparison
             raise ValueError("'k' is not allowed in knn_kw and bp_kwargs.")
-        
+
         if enn_min_matching_neighbors is None:
             enn_min_matching_neighbors = enn_neighbors // 3
-        
+
         if (
             enn_neighbors <= 0
             or enn_min_matching_neighbors <= 0
@@ -175,13 +171,6 @@ class InspireClassifier(BaggingClassifier):
             raise ValueError(
                 "enn_neighbors, enn_min_matching_neighbors, oversampling_neighbors, "
                 "val_to_train_neighbors, and step_size must be greater than 0."
-            )
-        if cache_size is not None and cache_size < max(
-            enn_neighbors, oversampling_neighbors
-        ):
-            raise ValueError(
-                "cache_size must be greater than or equal to "
-                "max(enn_neighbors, oversampling_neighbors)."
             )
         if enn_min_matching_neighbors > enn_neighbors:
             raise ValueError(
@@ -204,12 +193,6 @@ class InspireClassifier(BaggingClassifier):
         self.approximate_knn_ = approximate_knn_
 
         self.step_size = step_size
-        if cache_size is None:
-            if remove_outliers_:
-                cache_size = max(enn_neighbors, oversampling_neighbors) + enn_neighbors
-            else:
-                cache_size = max(enn_neighbors, oversampling_neighbors)
-        self.cache_size = cache_size
 
         self.oversampling_per_step = oversampling_per_step
         self.oversampling_ratio = oversampling_ratio
@@ -299,7 +282,7 @@ class InspireClassifier(BaggingClassifier):
 
         # Step 1: Fit and cache the KNN index for the training set
         # (between training set itself)
-        self._fit_knn(X=X)
+        self._fit_knn(X=X, k=self.enn_neighbors)
 
         # Step 2: Perform ENN cleaning on the training data
         if self.remove_outliers_:
@@ -320,7 +303,7 @@ class InspireClassifier(BaggingClassifier):
         minority_mask = y == self.minority_class
         minority_mask_val = y_val == self.minority_class
 
-        # Step 5: Identify border regions for oversampling.
+        # Step 4: Identify border regions for oversampling.
         br_mask = self._identify_br(
             indices=indices,
             y=y,
@@ -328,16 +311,16 @@ class InspireClassifier(BaggingClassifier):
             save_history_=save_history_,
         )
 
-        # Step x: Clear KNN cache.
+        # Step 5: Clear KNN cache.
         # Fit and cache the KNN index for minority class in training set.
         del self._full_knn_indices, self._full_knn_distances
         self._knn_fitted_ = False
         self._indices_translation_map = None
 
         X_minority = X[minority_mask]
-        self._fit_knn(X=X_minority, **self.knn_kw)
+        self._fit_knn(X=X_minority, k=self.oversampling_neighbors, **self.knn_kw)
 
-        # Step 4: Fit and cache the KNN index for the validation set
+        # Step 6: Fit and cache the KNN index for the validation set
         # (between validation set and minority class in cleaned training set
         # as no more is needed)
         self._fit_knn_val(X=X_minority, X_val=X_val, **self.knn_kw)
@@ -372,7 +355,7 @@ class InspireClassifier(BaggingClassifier):
         all_models_cached_preds = None
         X_synth, y_synth = None, None
 
-        # Step 5: Iterative training using parallel execution.
+        # Step 7: Iterative training using parallel execution.
         gen = range(math.ceil(self.n_estimators / self.step_size))
         if self.verbose_:
             gen = tqdm(
@@ -382,7 +365,7 @@ class InspireClassifier(BaggingClassifier):
         with concurrent.futures.ThreadPoolExecutor(self.threads) as executor:
             for step in gen:
                 if step > 0:
-                    # Step 5.1: Calculate new models predictions on the validation set
+                    # Step 7.1: Calculate new models predictions on the validation set
                     # and add them to the cache.
                     y_proba, all_models_cached_preds = self._batch_predict(
                         idx=step,
@@ -392,7 +375,7 @@ class InspireClassifier(BaggingClassifier):
                         save_history_=save_history_,
                     )
 
-                    # 5.2: Perform oversampling
+                    # Step 7.2: Perform oversampling
                     X_synth, y_synth = self._perform_oversampling(
                         y_proba=y_proba,
                         X=X_minority,
@@ -405,7 +388,7 @@ class InspireClassifier(BaggingClassifier):
                         save_history_=save_history_,
                     )
 
-                # Step 5.3: Train next models batch
+                # Step 7.3: Train next models batch
                 models_to_train = (
                     self.step_size
                     if step < len(gen) - 1
@@ -453,12 +436,13 @@ class InspireClassifier(BaggingClassifier):
         """
         self._history.append({"name": name, **dt})
 
-    def _fit_knn(self, X: np.ndarray, **knn_kw) -> None:
+    def _fit_knn(self, X: np.ndarray, k: int, **knn_kw) -> None:
         """
         Fits a KNN index for the training set and caches the results.
 
         Args:
             X (np.ndarray): Training data.
+            k (int): Number of neighbors to find.
             **knn_kw: Keyword arguments for KNN fitting.
         Raises:
             RuntimeError: If the training KNN index is already fitted.
@@ -468,9 +452,7 @@ class InspireClassifier(BaggingClassifier):
 
         with TimedLogger("Fitting KNN index", logger=logger, level=logging.INFO):
             # between X and X
-            indices, distances = self._fit_knn_helper(
-                X=X, X_query=X, k=self.cache_size + 1, **knn_kw
-            )
+            indices, distances = self._fit_knn_helper(X=X, X_query=X, k=k + 1, **knn_kw)
             # Do not store the first index as it is the same observation.
             self._full_knn_indices, self._full_knn_distances = (
                 indices[:, 1:],
@@ -892,7 +874,9 @@ class InspireClassifier(BaggingClassifier):
         Returns:
             Tuple[np.ndarray, np.ndarray]: The synthetic features and labels generated by SMOTE.
         """
-        return self._smote._fit_resample(X, y, X_to_oversample)  # pylint: disable=protected-access
+        return self._smote._fit_resample(
+            X, y, X_to_oversample
+        )  # pylint: disable=protected-access
 
     def _perform_oversampling(
         self,
