@@ -282,7 +282,7 @@ class InspireClassifier(BaggingClassifier):
 
         # Step 1: Fit and cache the KNN index for the training set
         # (between training set itself)
-        self._fit_knn(X=X, k=self.enn_neighbors)
+        self._fit_knn(X=X, k=2*self.enn_neighbors)
 
         # Step 2: Perform ENN cleaning on the training data
         if self.remove_outliers_:
@@ -314,6 +314,7 @@ class InspireClassifier(BaggingClassifier):
         # Step 5: Clear KNN cache.
         # Fit and cache the KNN index for minority class in training set.
         del self._full_knn_indices, self._full_knn_distances
+        self._removed_mask = None
         self._knn_fitted_ = False
         self._indices_translation_map = None
 
