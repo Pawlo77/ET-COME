@@ -121,6 +121,8 @@ def perform_experiment(
                     y_test=y_test,
                     verbose=verbose,
                 )
+                
+                runner.results_["dataset_name"] = dataset_name
 
                 runner.results_.to_json(
                     os.path.join(results_dir, "results.json"),
@@ -128,7 +130,7 @@ def perform_experiment(
                     lines=True,
                     mode="a",
                 )
-
+                
                 with open(
                     os.path.join(results_dir, "performed_runs.txt"),
                     mode="a",

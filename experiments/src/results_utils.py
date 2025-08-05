@@ -22,7 +22,7 @@ def load_results_small() -> Tuple[pd.DataFrame, pd.DataFrame]:
 
     for i, name in enumerate(("advanced", "base")):
         # small non additional datasets
-        for postfix in ("a", "b", "c"):
+        for postfix in ("a", "b", "c", "d"):
             results = pd.read_json(
                 os.path.join(
                     RESULTS_DIR,

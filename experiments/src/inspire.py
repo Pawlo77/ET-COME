@@ -282,7 +282,7 @@ class InspireClassifier(BaggingClassifier):
 
         # Step 1: Fit and cache the KNN index for the training set
         # (between training set itself)
-        self._fit_knn(X=X, k=2*self.enn_neighbors)
+        self._fit_knn(X=X, k=3*self.enn_neighbors)
 
         # Step 2: Perform ENN cleaning on the training data
         if self.remove_outliers_:
