@@ -5,16 +5,15 @@ import logging
 from functools import partial
 from typing import Any, Dict, List
 
-from src.inspire import MergingStrategy
 from src.utils import PARAM_GRID as TREE_PARAM_GRID
 from src.utils import TimedLogger, create_logger, get_parser
 
 PARAM_GRID: Dict[str, List[Any]] = {
-#     "enn_neighbors": [3, 5, 7],
-#     "adaptive_oversampling_step": [True, False],
-#     "br_threshold": [0.1, 0.2, 0.3],
-#     "bp_theta": [0.5, 0.7, 0.9],
-#     "mask_merging_strategy": [MergingStrategy.AND, MergingStrategy.OR],
+    #     "enn_neighbors": [3, 5, 7],
+    #     "adaptive_oversampling_step": [True, False],
+    #     "br_threshold": [0.1, 0.2, 0.3],
+    #     "bp_theta": [0.5, 0.7, 0.9],
+    #     "mask_merging_strategy": [MergingStrategy.AND, MergingStrategy.OR],
     "n_estimators": [100, 500],
     "oversampling_ratio": [0.8, 1.0],
     "oversampling_neighbors": [3, 5, 7],

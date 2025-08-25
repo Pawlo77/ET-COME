@@ -141,7 +141,7 @@ def create_results_point_plot(
             hue="oversampling_option",
             style="oversampling_option",
             markers=True,
-            linestyle='None',
+            linestyle="None",
             ax=ax,
             alpha=alpha,
             err_style="bars",
@@ -157,7 +157,7 @@ def create_results_point_plot(
     ax.tick_params(axis="y", labelsize=10)
     ax.grid(True, linestyle="--", linewidth=0.5)
     if not x_discrete:
-        ax.set_xscale('linear')
+        ax.set_xscale("linear")
 
     if not plot_legend:
         ax.get_legend().remove()

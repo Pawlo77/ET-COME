@@ -39,7 +39,7 @@ class EfficientSMOTE:
         self._k_neighbors = k_neighbors
         self._minority_class = minority_class
 
-    # pylint: disable=invalid-name,too-many-locals
+    # pylint: disable=invalid-name,too-many-locals,unused-argument
     def _fit_resample(
         self, X: np.ndarray, y: np.ndarray, indices_to_oversample: np.ndarray
     ) -> Tuple[Union[np.ndarray, sparse.spmatrix], np.ndarray]:

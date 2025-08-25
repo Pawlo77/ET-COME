@@ -1,5 +1,6 @@
 """Inspire utility functions."""
 
+import logging
 import os
 from functools import partial
 
@@ -12,7 +13,6 @@ from .dataset_manager import BinaryDatasetManager
 from .experiments_utils import SCORING, get_performed_runs
 from .training_utils import ParamRunner
 from .utils import RANDOM_SEED, RESULTS_DIR
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,6 @@ def perform_experiment(
 
                 # pylint: disable=duplicate-code
 
-                
                 runner.fit(
                     X_train=X_train,
                     y_train=y_train,
@@ -121,7 +120,7 @@ def perform_experiment(
                     y_test=y_test,
                     verbose=verbose,
                 )
-                
+
                 runner.results_["dataset_name"] = dataset_name
 
                 runner.results_.to_json(
@@ -130,15 +129,13 @@ def perform_experiment(
                     lines=True,
                     mode="a",
                 )
-                
+
                 with open(
                     os.path.join(results_dir, "performed_runs.txt"),
                     mode="a",
                     encoding="utf-8",
                 ) as f:
                     f.write(f"{_id}\n")
-
-                
 
                 progress_bar.update(1)
                 progress_bar.refresh()
