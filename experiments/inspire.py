@@ -17,7 +17,7 @@ PARAM_GRID: Dict[str, List[Any]] = {
     "n_estimators": [100, 500],
     "oversampling_ratio": [0.8, 1.0],
     "oversampling_neighbors": [3, 5, 7],
-    "val_to_train_neighbors": [3, 5, 7],
+    "val_to_train_neighbors": [3, 5],
     "step_size": [2, 5],
     "remove_outliers_": [True, False],
 }
