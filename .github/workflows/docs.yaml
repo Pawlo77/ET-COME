@@ -34,14 +34,14 @@ jobs:
       - name: Build documentation with Makefile
         run: |
           make docs
-          mkdir -p et-come/gh-pages
-          touch et-come/gh-pages/.nojekyll
-          cp -r et-come/docs/_build/html/* et-come/gh-pages/
+          mkdir -p gh-pages
+          touch gh-pages/.nojekyll
+          cp -r docs/_build/html/* gh-pages/
 
       - name: Deploy documentation
         if: ${{ github.event_name == 'push' }}
         uses: JamesIves/github-pages-deploy-action@v4.7.3
         with:
           branch: gh-pages
-          folder: et-come/gh-pages/
+          folder: gh-pages/
           token: ${{ secrets.GITHUB_TOKEN }}
