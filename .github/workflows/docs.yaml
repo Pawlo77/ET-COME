@@ -29,7 +29,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies with uv
-        run: uv sync --locked --all-groups --no-active
+        run: uv sync --all-groups --no-active
 
       - name: Build documentation with Makefile
         run: |
