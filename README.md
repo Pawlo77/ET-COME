@@ -1,8 +1,8 @@
-# INSPIRE
+# ET-COME
 
-## Integrated Neighborhood SMOTE and Performance-based Iterative Refinement Ensemble
+## Equilibrium Transport with Conformal Minority Expansion
 
-This repository hosts supplementary material related to the INSPIRE paper. It provides both the algorithm implementation and the experimental results conducted during our research.
+This repository hosts supplementary material related to the ET-COME paper. It provides both the algorithm implementation and the experimental results conducted during our research.
 
 ## Overview
 
@@ -17,14 +17,14 @@ This repository hosts supplementary material related to the INSPIRE paper. It pr
 
 ## Repository Structure
 
-- **[inspire](inspire.py):**
+- **[et_come](et_come.py):**
     Contains the main algorithm implementation.
 
 - **[experiments](./experiments/):**
     Directory with experimental scripts and data for interpretation and performance evaluation.
 
 - **[paper](./paper/paper.pdf):**
-    Includes the INSPIRE paper in PDF format.
+    Includes the ET-COME paper in PDF format.
 
 
 # How to run our experiments

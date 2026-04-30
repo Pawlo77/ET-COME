@@ -1,0 +1,47 @@
+name: Docs2Pages
+on:
+  push:
+    branches:
+      - main
+      - feature/auto-package-docs # for development testing
+permissions:
+  contents: write
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync dependencies with uv
+        run: uv sync --locked --all-groups --no-active
+
+      - name: Build documentation with Makefile
+        run: |
+          make docs
+          mkdir -p et-come/gh-pages
+          touch et-come/gh-pages/.nojekyll
+          cp -r et-come/docs/_build/html/* et-come/gh-pages/
+
+      - name: Deploy documentation
+        if: ${{ github.event_name == 'push' }}
+        uses: JamesIves/github-pages-deploy-action@v4.7.3
+        with:
+          branch: gh-pages
+          folder: et-come/gh-pages/
+          token: ${{ secrets.GITHUB_TOKEN }}
